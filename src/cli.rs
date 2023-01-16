@@ -1,7 +1,7 @@
 use crate::config::Config;
-use clap::{command, value_parser, Arg, ArgAction};
+use clap::{command, value_parser, Arg};
 
-pub fn parse_cli() -> Config {
+pub fn parse_args() -> Config {
     let args = command!()
         .arg(
             Arg::new("height")
@@ -56,6 +56,6 @@ pub fn parse_cli() -> Config {
         margin_x: args.get_one::<f32>("marginx").unwrap().to_owned(),
         margin_y: args.get_one::<f32>("marginy").unwrap().to_owned(),
         font_size: args.get_one::<u32>("fontsize").unwrap().to_owned(),
-        output: args.get_one::<String>("output").unwrap().to_owned(),
+        output: args.get_one::<String>("output").unwrap().clone(),
     }
 }
