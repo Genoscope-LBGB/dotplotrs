@@ -16,5 +16,6 @@ fn main() {
 
     println!("Building the dotplot");
     let dotplot = Dotplot::new(&config);
+
     dotplot.save();
 }
