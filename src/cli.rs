@@ -3,6 +3,7 @@ use clap::{command, value_parser, Arg};
 
 pub fn parse_args() -> Config {
     let args = command!()
+        .arg(Arg::new("paf").short('p').long("paf").required(true))
         .arg(
             Arg::new("height")
                 .long("height")
@@ -51,6 +52,7 @@ pub fn parse_args() -> Config {
         .get_matches();
 
     Config {
+        paf: args.get_one::<String>("paf").unwrap().clone(),
         height: args.get_one::<u32>("height").unwrap().to_owned(),
         width: args.get_one::<u32>("width").unwrap().to_owned(),
         margin_x: args.get_one::<f32>("marginx").unwrap().to_owned(),

@@ -1,0 +1,45 @@
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+
+pub struct PafRecord {
+    pub qname: String,
+    pub qlen: u64,
+    pub qstart: u64,
+    pub qend: u64,
+    pub tname: String,
+    pub tlen: u64,
+    pub tstart: u64,
+    pub tend: u64,
+    pub nb_matches: u64,
+}
+
+impl PafRecord {
+    pub fn from_paf_line(line: String) -> Self {
+        let split_line = line.split("\t").collect::<Vec<&str>>();
+
+        Self {
+            qname: String::from(split_line[0]),
+            qlen: split_line[1].parse::<u64>().unwrap(),
+            qstart: split_line[2].parse::<u64>().unwrap(),
+            qend: split_line[3].parse::<u64>().unwrap(),
+            tname: String::from(split_line[5]),
+            tlen: split_line[6].parse::<u64>().unwrap(),
+            tstart: split_line[7].parse::<u64>().unwrap(),
+            tend: split_line[8].parse::<u64>().unwrap(),
+            nb_matches: split_line[9].parse::<u64>().unwrap(),
+        }
+    }
+}
+
+pub fn parse_paf(input_paf: &String) -> Vec<PafRecord> {
+    let paf = File::open(input_paf);
+    let reader = BufReader::new(paf.unwrap());
+
+    let mut records = Vec::new();
+    for line in reader.lines() {
+        let record = PafRecord::from_paf_line(line.unwrap());
+        records.push(record);
+    }
+
+    records
+}

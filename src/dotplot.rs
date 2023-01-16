@@ -1,13 +1,13 @@
 use crate::config::Config;
 use image::{Rgb, RgbImage};
 
-pub struct Dotplot {
-    config: Config,
+pub struct Dotplot<'a> {
+    config: &'a Config,
     plot: RgbImage,
 }
 
-impl Dotplot {
-    pub fn new(config: Config) -> Self {
+impl<'a> Dotplot<'a> {
+    pub fn new(config: &'a Config) -> Self {
         let plot = RgbImage::new(config.width, config.height);
 
         let mut dotplot = Self { config, plot };
@@ -15,11 +15,13 @@ impl Dotplot {
         dotplot
     }
 
+    // Initializes the dotplot with a blank background and empty axes
     fn init_plot(&mut self) {
         self.init_background();
         self.init_axes_lines();
     }
 
+    // Initialize the background to white
     fn init_background(&mut self) {
         for x in 0..self.config.width {
             for y in 0..self.config.height {
@@ -28,6 +30,7 @@ impl Dotplot {
         }
     }
 
+    // Draws blank axes
     fn init_axes_lines(&mut self) {
         let offset_x = (self.config.width as f32 * self.config.margin_x) as u32;
         let offset_y = (self.config.height as f32 * self.config.margin_y) as u32;
@@ -47,6 +50,7 @@ impl Dotplot {
         }
     }
 
+    // Saves the plot to a file
     pub fn save(&self) {
         self.plot.save(&self.config.output).unwrap();
     }
