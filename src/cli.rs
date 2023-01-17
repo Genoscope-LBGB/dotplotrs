@@ -6,6 +6,14 @@ pub fn parse_args() -> Config {
     let args = command!()
         .arg(Arg::new("paf").short('p').long("paf").required(true))
         .arg(
+            Arg::new("minalnsize")
+                .long("min-aln-size")
+                .required(false)
+                .value_parser(value_parser!(f32))
+                .default_value("0.0")
+                .help("Only displays alignment longer than this value"),
+        )
+        .arg(
             Arg::new("height")
                 .long("height")
                 .required(true)
@@ -59,6 +67,7 @@ pub fn parse_args() -> Config {
 
     Config {
         paf: args.get_one::<String>("paf").unwrap().clone(),
+        min_aln_size: args.get_one::<f32>("minalnsize").unwrap().to_owned(),
         height: args.get_one::<u32>("height").unwrap().to_owned(),
         width: args.get_one::<u32>("width").unwrap().to_owned(),
         margin_x: args.get_one::<f32>("marginx").unwrap().to_owned(),
