@@ -74,7 +74,7 @@ impl<'a> Dotplot<'a> {
         }
     }
 
-    pub fn draw(&mut self, records: &Vec<(String, Vec<PafRecord>)>) {
+    pub fn draw(&mut self, records: &[(String, Vec<PafRecord>)]) {
         let target_coords = self.targets_to_coords(records);
         self.draw_target_ticks(&target_coords);
 
@@ -85,10 +85,10 @@ impl<'a> Dotplot<'a> {
     // Gets the porsition of each target on the x-axis
     fn targets_to_coords(
         &self,
-        records: &Vec<(String, Vec<PafRecord>)>,
+        records: &[(String, Vec<PafRecord>)],
     ) -> HashMap<String, TargetCoord> {
         let targets_sizes = self.get_target_sizes_in_bp(records);
-        let total_size = targets_sizes.iter().fold(0 as u64, |acc, x| acc + x.1);
+        let total_size = targets_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
         let axis_size = self.end_x - self.start_x;
         let px_per_bp = axis_size as f64 / total_size as f64;
@@ -112,10 +112,10 @@ impl<'a> Dotplot<'a> {
     // Gets the porsition of each target on the x-axis
     fn queries_to_coords(
         &self,
-        records: &Vec<(String, Vec<PafRecord>)>,
+        records: &[(String, Vec<PafRecord>)],
     ) -> HashMap<String, QueryCoord> {
         let query_sizes = self.get_query_sizes_in_bp(records);
-        let total_size = query_sizes.iter().fold(0 as u64, |acc, x| acc + x.1);
+        let total_size = query_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
         let axis_size = self.end_y - self.start_y;
         let px_per_bp = axis_size as f64 / total_size as f64;
@@ -139,7 +139,7 @@ impl<'a> Dotplot<'a> {
     // Gets all targets sizes
     fn get_target_sizes_in_bp(
         &self,
-        records_vec: &Vec<(String, Vec<PafRecord>)>,
+        records_vec: &[(String, Vec<PafRecord>)],
     ) -> Vec<(String, u64)> {
         let mut targets_sizes: HashMap<String, u64> = HashMap::new();
 
@@ -157,7 +157,7 @@ impl<'a> Dotplot<'a> {
     // Gets all query sizes
     fn get_query_sizes_in_bp(
         &self,
-        records_vec: &Vec<(String, Vec<PafRecord>)>,
+        records_vec: &[(String, Vec<PafRecord>)],
     ) -> Vec<(String, u64)> {
         let mut query_sizes: HashMap<String, u64> = HashMap::new();
 
@@ -175,7 +175,7 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_target_ticks(&mut self, coords: &HashMap<String, TargetCoord>) {
-        for (_, TargetCoord { start, end }) in coords.iter() {
+        for (_, TargetCoord { start, end: _ }) in coords.iter() {
             if *start > self.start_x as f32 {
                 draw_line_segment_mut(
                     &mut self.plot,
@@ -188,7 +188,7 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_query_ticks(&mut self, coords: &HashMap<String, QueryCoord>) {
-        for (_, QueryCoord { start, end }) in coords.iter() {
+        for (_, QueryCoord { start, end: _ }) in coords.iter() {
             if *start < self.end_y as f32 {
                 draw_line_segment_mut(
                     &mut self.plot,

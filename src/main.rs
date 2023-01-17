@@ -7,7 +7,7 @@ mod parser;
 use cli::{parse_args, setup_logging};
 use dotplot::Dotplot;
 use log::{debug, info, LevelFilter};
-use parser::{parse_paf, sort_records_hash};
+use parser::parse_paf;
 
 fn main() {
     let config = parse_args();
@@ -17,7 +17,7 @@ fn main() {
     }
 
     info!("Reading PAF file: {}", config.paf);
-    let mut records = parse_paf(&config.paf);
+    let records = parse_paf(&config.paf);
     debug!("Sorting records");
 
     info!("Building the dotplot");

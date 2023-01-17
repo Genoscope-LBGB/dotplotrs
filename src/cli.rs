@@ -83,7 +83,7 @@ pub fn setup_logging(log_level: log::LevelFilter) {
     // configure colors for the name of the level.
     // since almost all of them are the same as the color for the whole line, we
     // just clone `colors_line` and overwrite our changes
-    let colors_level = colors_line.clone().info(Color::Green);
+    let colors_level = colors_line.info(Color::Green);
     // here we set up our fern Dispatch
     fern::Dispatch::new()
         .format(move |out, message, record| {

@@ -17,7 +17,7 @@ pub struct PafRecord {
 
 impl PafRecord {
     pub fn from_paf_line(line: String) -> Self {
-        let split_line = line.split("\t").collect::<Vec<&str>>();
+        let split_line = line.split('\t').collect::<Vec<&str>>();
 
         Self {
             qname: String::from(split_line[0]),
@@ -58,6 +58,6 @@ pub fn sort_records_hash(records_hash: &mut HashMap<String, Vec<PafRecord>>) {
     }
 }
 
-pub fn sort_records_by_tstart(records: &mut Vec<PafRecord>) {
+pub fn sort_records_by_tstart(records: &mut [PafRecord]) {
     records.sort_by(|a, b| a.tstart.partial_cmp(&b.tstart).unwrap());
 }
