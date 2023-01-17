@@ -33,7 +33,7 @@ impl PafRecord {
     }
 }
 
-pub fn parse_paf(input_paf: &String) -> HashMap<String, Vec<PafRecord>> {
+pub fn parse_paf(input_paf: &String) -> Vec<(String, Vec<PafRecord>)> {
     let paf = File::open(input_paf);
     let reader = BufReader::new(paf.unwrap());
 
@@ -48,7 +48,8 @@ pub fn parse_paf(input_paf: &String) -> HashMap<String, Vec<PafRecord>> {
         }
     }
 
-    records_hash
+    sort_records_hash(&mut records_hash);
+    Vec::from_iter(records_hash)
 }
 
 pub fn sort_records_hash(records_hash: &mut HashMap<String, Vec<PafRecord>>) {

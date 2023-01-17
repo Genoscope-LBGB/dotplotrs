@@ -19,7 +19,6 @@ fn main() {
     info!("Reading PAF file: {}", config.paf);
     let mut records = parse_paf(&config.paf);
     debug!("Sorting records");
-    sort_records_hash(&mut records);
 
     info!("Building the dotplot");
     let mut dotplot = Dotplot::new(&config);
