@@ -2,6 +2,12 @@ use std::collections::HashMap;
 
 use crate::{config::Config, parser::PafRecord};
 use image::{Rgb, RgbImage};
+use imageproc::drawing::draw_line_segment_mut;
+
+pub struct TargetCoord {
+    pub start: u32,
+    pub end: u32,
+}
 
 pub struct Dotplot<'a> {
     config: &'a Config,
@@ -35,12 +41,6 @@ impl<'a> Dotplot<'a> {
         dotplot.init_plot();
         dotplot
     }
-
-    pub fn draw(&mut self, records: &HashMap<String, Vec<PafRecord>>) {}
-
-    // Gets the porsition of each target on the x-axis
-    fn record_target_to_coords(records: &HashMap<String, Vec<PafRecord>>) {}
-
     // Initializes the dotplot with a blank background and empty axes
     fn init_plot(&mut self) {
         self.init_background();
@@ -66,6 +66,73 @@ impl<'a> Dotplot<'a> {
         for y in self.start_y..self.end_y {
             self.plot.put_pixel(self.start_x, y, Rgb([0, 0, 0]));
             self.plot.put_pixel(self.end_x, y, Rgb([0, 0, 0]));
+        }
+    }
+
+    pub fn draw(&mut self, records_hash: &HashMap<String, Vec<PafRecord>>) {
+        let target_coords = self.targets_to_coords(records_hash);
+        self.draw_target_ticks(target_coords);
+    }
+
+    // Gets the porsition of each target on the x-axis
+    fn targets_to_coords(
+        &self,
+        records_hash: &HashMap<String, Vec<PafRecord>>,
+    ) -> HashMap<String, TargetCoord> {
+        let targets_sizes = self.get_target_sizes_in_bp(records_hash);
+        let total_size = targets_sizes.iter().fold(0 as u64, |acc, x| acc + x.1);
+
+        let mut targets_sizes_vec = Vec::from_iter(&targets_sizes);
+        targets_sizes_vec.sort_by(|&(_, tlen_1), &(_, tlen_2)| tlen_2.cmp(tlen_1));
+
+        let axis_size = self.end_x - self.start_x;
+        let px_per_bp = axis_size as f64 / total_size as f64;
+
+        let mut coords: HashMap<String, TargetCoord> = HashMap::new();
+        let mut last_pos: u32 = self.start_x;
+        for (target, size) in targets_sizes_vec.iter() {
+            let segment_size = (**size as f64 * px_per_bp) as u32;
+            let end_coord = last_pos + segment_size;
+            let target_coords = TargetCoord {
+                start: last_pos,
+                end: end_coord,
+            };
+            coords.insert((*target).clone(), target_coords);
+            last_pos = end_coord;
+        }
+
+        coords
+    }
+
+    // Gets all targets sizes
+    fn get_target_sizes_in_bp(
+        &self,
+        records_hash: &HashMap<String, Vec<PafRecord>>,
+    ) -> HashMap<String, u64> {
+        let mut targets_sizes: HashMap<String, u64> = HashMap::new();
+
+        for (tname, records) in records_hash.iter() {
+            match targets_sizes.get_mut(tname) {
+                Some(_) => panic!("Multiple targets have the same name! {}", tname),
+                None => {
+                    targets_sizes.insert(tname.clone(), records[0].tlen);
+                }
+            }
+        }
+
+        targets_sizes
+    }
+
+    fn draw_target_ticks(&mut self, coords: HashMap<String, TargetCoord>) {
+        for (target, TargetCoord { start, end }) in coords.iter() {
+            if (*start > self.start_x) {
+                draw_line_segment_mut(
+                    &mut self.plot,
+                    (*start as f32, self.end_y as f32),
+                    (*start as f32, self.end_y as f32 + 10.0),
+                    Rgb([0, 0, 0]),
+                );
+            }
         }
     }
 

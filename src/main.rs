@@ -22,7 +22,8 @@ fn main() {
     sort_records_hash(&mut records);
 
     info!("Building the dotplot");
-    let dotplot = Dotplot::new(&config);
+    let mut dotplot = Dotplot::new(&config);
+    dotplot.draw(&records);
 
     dotplot.save();
 }
