@@ -17,7 +17,7 @@ fn main() {
     }
 
     info!("Reading PAF file: {}", config.paf);
-    let records = parse_paf(&config.paf);
+    let records = parse_paf(&config.paf, config.min_aln_size);
     debug!("Sorting records");
 
     info!("Building the dotplot");
