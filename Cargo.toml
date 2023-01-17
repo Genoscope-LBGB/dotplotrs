@@ -7,5 +7,10 @@ edition = "2021"
 
 [dependencies]
 clap = {version = "4.1.1", features = ["cargo"]}
+
+chrono = "0.4.19"
+fern = { version = "0.6.1", features = ["colored"] }
+log = "0.4.17"
+
 image = "0.24.5"
 imageproc = "0.23.0"

@@ -1,5 +1,6 @@
 use crate::config::Config;
 use clap::{command, value_parser, Arg};
+use fern::colors::{Color, ColoredLevelConfig};
 
 pub fn parse_args() -> Config {
     let args = command!()
@@ -49,6 +50,11 @@ pub fn parse_args() -> Config {
                 .default_value("dotplot.png")
                 .help("Name of the output file"),
         )
+        .arg(
+            Arg::new("debug")
+                .long("debug")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
 
     Config {
@@ -59,5 +65,50 @@ pub fn parse_args() -> Config {
         margin_y: args.get_one::<f32>("marginy").unwrap().to_owned(),
         font_size: args.get_one::<u32>("fontsize").unwrap().to_owned(),
         output: args.get_one::<String>("output").unwrap().clone(),
+        debug: args.get_flag("debug"),
     }
+}
+
+pub fn setup_logging(log_level: log::LevelFilter) {
+    // configure colors for the whole line
+    let colors_line = ColoredLevelConfig::new()
+        .error(Color::Red)
+        .warn(Color::Yellow)
+        // we actually don't need to specify the color for debug and info, they are white by default
+        .info(Color::White)
+        .debug(Color::White)
+        // depending on the terminals color scheme, this is the same as the background color
+        .trace(Color::BrightBlack);
+
+    // configure colors for the name of the level.
+    // since almost all of them are the same as the color for the whole line, we
+    // just clone `colors_line` and overwrite our changes
+    let colors_level = colors_line.clone().info(Color::Green);
+    // here we set up our fern Dispatch
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{color_line}[{date}] [{target}] [{level}{color_line}] {message}\x1B[0m",
+                color_line = format_args!(
+                    "\x1B[{}m",
+                    colors_line.get_color(&record.level()).to_fg_str()
+                ),
+                date = chrono::Local::now().format("%d-%m-%Y %H:%M:%S"),
+                target = record.target(),
+                level = colors_level.color(record.level()),
+                message = message,
+            ));
+        })
+        // set the default log level. to filter out verbose log messages from dependencies, set
+        // this to Warn and overwrite the log level for your crate.
+        .level(log_level)
+        // change log levels for individual modules. Note: This looks for the record's target
+        // field which defaults to the module path but can be overwritten with the `target`
+        // parameter:
+        // `info!(target="special_target", "This log message is about special_target");`
+        .level_for("pretty_colored", log::LevelFilter::Trace)
+        // output to stdout
+        .chain(std::io::stderr())
+        .apply()
+        .unwrap();
 }

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+#[derive(Debug)]
 pub struct PafRecord {
     pub qname: String,
     pub qlen: u64,
@@ -31,15 +33,30 @@ impl PafRecord {
     }
 }
 
-pub fn parse_paf(input_paf: &String) -> Vec<PafRecord> {
+pub fn parse_paf(input_paf: &String) -> HashMap<String, Vec<PafRecord>> {
     let paf = File::open(input_paf);
     let reader = BufReader::new(paf.unwrap());
 
-    let mut records = Vec::new();
+    let mut records_hash: HashMap<String, Vec<PafRecord>> = HashMap::new();
     for line in reader.lines() {
         let record = PafRecord::from_paf_line(line.unwrap());
-        records.push(record);
+        match records_hash.get_mut(&record.tname) {
+            Some(records) => records.push(record),
+            None => {
+                records_hash.insert(record.tname.clone(), vec![record]);
+            }
+        }
     }
 
-    records
+    records_hash
+}
+
+pub fn sort_records_hash(records_hash: &mut HashMap<String, Vec<PafRecord>>) {
+    for (_, records) in records_hash.iter_mut() {
+        sort_records_by_tstart(records);
+    }
+}
+
+pub fn sort_records_by_tstart(records: &mut Vec<PafRecord>) {
+    records.sort_by(|a, b| a.tstart.partial_cmp(&b.tstart).unwrap());
 }

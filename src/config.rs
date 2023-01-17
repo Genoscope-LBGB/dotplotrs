@@ -6,4 +6,5 @@ pub struct Config {
     pub margin_y: f32,
     pub font_size: u32,
     pub output: String,
+    pub debug: bool,
 }
