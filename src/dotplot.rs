@@ -5,8 +5,8 @@ use image::{Rgb, RgbImage};
 use imageproc::drawing::draw_line_segment_mut;
 
 pub struct TargetCoord {
-    pub start: u32,
-    pub end: u32,
+    pub start: f32,
+    pub end: f32,
 }
 
 pub struct QueryCoord {
@@ -94,9 +94,9 @@ impl<'a> Dotplot<'a> {
         let px_per_bp = axis_size as f64 / total_size as f64;
 
         let mut coords: HashMap<String, TargetCoord> = HashMap::new();
-        let mut last_pos: u32 = self.start_x;
+        let mut last_pos = self.start_x as f32;
         for (target, size) in targets_sizes.iter() {
-            let segment_size = (*size as f64 * px_per_bp) as u32;
+            let segment_size = (*size as f64 * px_per_bp) as f32;
             let end_coord = last_pos + segment_size;
             let target_coords = TargetCoord {
                 start: last_pos,
@@ -130,7 +130,6 @@ impl<'a> Dotplot<'a> {
                 end: end_coord,
             };
             coords.insert(query.clone(), query_coords);
-            println!("{} {}", size, segment_size);
             last_pos = end_coord;
         }
 
@@ -177,11 +176,11 @@ impl<'a> Dotplot<'a> {
 
     fn draw_target_ticks(&mut self, coords: &HashMap<String, TargetCoord>) {
         for (_, TargetCoord { start, end }) in coords.iter() {
-            if *start > self.start_x {
+            if *start > self.start_x as f32 {
                 draw_line_segment_mut(
                     &mut self.plot,
-                    (*start as f32, self.end_y as f32),
-                    (*start as f32, self.end_y as f32 + 10.0),
+                    (*start, self.end_y as f32),
+                    (*start, self.end_y as f32 + 10.0),
                     Rgb([0, 0, 0]),
                 );
             }
