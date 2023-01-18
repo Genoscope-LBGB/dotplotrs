@@ -311,19 +311,19 @@ impl<'a> Dotplot<'a> {
         };
 
         for (target, TargetCoord { start, end }) in target_coords.iter() {
-            let mut text_size_x = (target.len() as f32) * height;
             let middle_x = (end - start) / 2.0;
 
-            let mut text = String::from(&target[..]);
-            if text_size_x >= (end - start) {
-                let nb_chars = usize::min(((end - start) / height) as usize, target.len());
-                if nb_chars < 4 {
-                    text = String::new();
-                } else {
-                    text = String::from(&target[0..(nb_chars - 3)]) + "...";
-                }
-                text_size_x = (text.len() as f32) * height;
-            }
+            let text = Self::get_text(target, *start, *end, height);
+            // let mut text = String::from(&target[..]);
+            // if text_size_x >= (end - start) {
+            //     let nb_chars = usize::min(((end - start) / height) as usize, target.len());
+            //     if nb_chars < 4 {
+            //         text = String::new();
+            //     } else {
+            //         text = String::from(&target[0..(nb_chars - 3)]) + "...";
+            //     }
+            let text_size_x = (text.len() as f32) * height;
+            // }
 
             draw_text_mut(
                 &mut self.plot,
@@ -338,20 +338,10 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_query_names(&mut self, query_coords: &HashMap<String, QueryCoord>) {
-        // Rotates the image to write on the y-axis
-        let center_x = self.config.width as f32 / 2.0;
-        let center_y = self.config.height as f32 / 2.0;
-        self.plot = rotate(
-            &self.plot,
-            (center_x, center_y),
-            -std::f32::consts::FRAC_PI_2,
-            Interpolation::Bicubic,
-            Rgb([0, 0, 0]),
-        );
+        self.rotate_image(-std::f32::consts::FRAC_PI_2);
 
         let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
         let font = Font::try_from_vec(font).unwrap();
-
         let height = 12.4;
         let scale = Scale {
             x: height * 2.0,
@@ -359,19 +349,9 @@ impl<'a> Dotplot<'a> {
         };
 
         for (query, QueryCoord { start, end }) in query_coords.iter() {
-            let mut text_size_x = (query.len() as f32) * height;
             let middle_x = (end - start) / 2.0;
-
-            let mut text = String::from(&query[..]);
-            if text_size_x >= (end - start) {
-                let nb_chars = usize::min(((end - start) / height) as usize, query.len());
-                if nb_chars < 4 {
-                    text = String::new();
-                } else {
-                    text = String::from(&query[0..(nb_chars - 3)]) + "...";
-                }
-                text_size_x = (text.len() as f32) * height;
-            }
+            let text = Self::get_text(query, *start, *end, height);
+            let text_size_x = (text.len() as f32) * height;
 
             draw_text_mut(
                 &mut self.plot,
@@ -384,11 +364,34 @@ impl<'a> Dotplot<'a> {
             );
         }
 
-        // Rotates the image back
+        self.rotate_image(std::f32::consts::FRAC_PI_2);
+    }
+
+    fn get_text(query: &String, start: f32, end: f32, height: f32) -> String {
+        let text_size_x = (query.len() as f32) * height;
+        let mut text = String::from(&query[..]);
+
+        if text_size_x >= (end - start) {
+            let nb_chars = usize::min(((end - start) / height) as usize, query.len());
+
+            if nb_chars < 4 {
+                text = String::new();
+            } else {
+                text = String::from(&query[0..(nb_chars - 3)]) + "...";
+            }
+        }
+
+        text
+    }
+
+    fn rotate_image(&mut self, angle: f32) {
+        let center_x = self.config.width as f32 / 2.0;
+        let center_y = self.config.height as f32 / 2.0;
+
         self.plot = rotate(
             &self.plot,
             (center_x, center_y),
-            std::f32::consts::FRAC_PI_2,
+            angle,
             Interpolation::Bicubic,
             Rgb([0, 0, 0]),
         );
