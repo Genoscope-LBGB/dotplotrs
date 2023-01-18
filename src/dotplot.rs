@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use crate::{config::Config, parser::PafRecord};
-use image::{Rgb, RgbImage};
+use image::{Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
 };
@@ -9,6 +7,7 @@ use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
 use num_traits::NumCast;
 use rusttype::{Font, Scale};
+use std::collections::HashMap;
 
 pub struct TargetCoord {
     pub start: f32,
@@ -26,12 +25,12 @@ pub struct Dotplot<'a> {
     end_x: f32,
     start_y: f32,
     end_y: f32,
-    plot: RgbImage,
+    plot: RgbaImage,
 }
 
 impl<'a> Dotplot<'a> {
     pub fn new(config: &'a Config) -> Self {
-        let plot = RgbImage::new(config.width, config.height);
+        let plot = RgbaImage::new(config.width, config.height);
 
         let offset_x = config.width as f32 * config.margin_x;
         let offset_y = config.height as f32 * config.margin_y;
@@ -64,7 +63,7 @@ impl<'a> Dotplot<'a> {
         draw_filled_rect_mut(
             &mut self.plot,
             Rect::at(0, 0).of_size(self.config.width, self.config.height),
-            Rgb([255, 255, 255]),
+            Rgba([255, 255, 255, 255]),
         );
     }
 
@@ -76,7 +75,7 @@ impl<'a> Dotplot<'a> {
                 (self.end_x - self.start_x) as u32,
                 (self.end_y - self.start_y) as u32,
             ),
-            Rgb([0, 0, 0]),
+            Rgba([0, 0, 0, 255]),
         );
     }
 
@@ -148,7 +147,7 @@ impl<'a> Dotplot<'a> {
             &mut self.plot,
             (tstart_px, qstart_px),
             (tend_px, qend_px),
-            Rgb([100, 0, 0]),
+            Rgba([0, 0, 0, 130]),
         );
     }
 
@@ -265,7 +264,7 @@ impl<'a> Dotplot<'a> {
                     &mut self.plot,
                     (*start, self.end_y),
                     (*start, self.end_y + 10.0),
-                    Rgb([0, 0, 0]),
+                    Rgba([0, 0, 0, 255]),
                 );
             }
         }
@@ -278,7 +277,7 @@ impl<'a> Dotplot<'a> {
                     &mut self.plot,
                     (self.start_x, *start),
                     (self.start_x - 10.0, *start),
-                    Rgb([0, 0, 0]),
+                    Rgba([0, 0, 0, 255]),
                 );
             }
         }
@@ -296,22 +295,12 @@ impl<'a> Dotplot<'a> {
 
         for (target, TargetCoord { start, end }) in target_coords.iter() {
             let middle_x = (end - start) / 2.0;
-
             let text = Self::get_text(target, *start, *end, height);
-            // let mut text = String::from(&target[..]);
-            // if text_size_x >= (end - start) {
-            //     let nb_chars = usize::min(((end - start) / height) as usize, target.len());
-            //     if nb_chars < 4 {
-            //         text = String::new();
-            //     } else {
-            //         text = String::from(&target[0..(nb_chars - 3)]) + "...";
-            //     }
             let text_size_x = (text.len() as f32) * height;
-            // }
 
             draw_text_mut(
                 &mut self.plot,
-                Rgb([0, 0, 0]),
+                Rgba([0, 0, 0, 255]),
                 (*start + (middle_x - (text_size_x / 2.0))) as i32,
                 (self.end_y + 10.0) as i32,
                 scale,
@@ -339,7 +328,7 @@ impl<'a> Dotplot<'a> {
 
             draw_text_mut(
                 &mut self.plot,
-                Rgb([0, 0, 0]),
+                Rgba([0, 0, 0, 255]),
                 (*start + (middle_x - (text_size_x / 2.0))) as i32,
                 (self.end_y + 10.0) as i32,
                 scale,
@@ -377,7 +366,7 @@ impl<'a> Dotplot<'a> {
             (center_x, center_y),
             angle,
             Interpolation::Bicubic,
-            Rgb([0, 0, 0]),
+            Rgba([0, 0, 0, 255]),
         );
     }
 
