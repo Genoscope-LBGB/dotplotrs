@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::{config::Config, parser::PafRecord};
 use image::{Rgb, RgbImage};
-use imageproc::drawing::{draw_filled_rect, draw_line_segment_mut, draw_text_mut};
+use imageproc::drawing::{
+    draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
+};
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
 use num_traits::NumCast;
@@ -57,10 +59,10 @@ impl<'a> Dotplot<'a> {
         self.init_axes_lines();
     }
 
-    // Initialize the background to white
+    // Initializes the background to white
     fn init_background(&mut self) {
-        self.plot = draw_filled_rect(
-            &self.plot,
+        draw_filled_rect_mut(
+            &mut self.plot,
             Rect::at(0, 0).of_size(self.config.width, self.config.height),
             Rgb([255, 255, 255]),
         );
@@ -68,31 +70,12 @@ impl<'a> Dotplot<'a> {
 
     // Draws blank axes
     fn init_axes_lines(&mut self) {
-        draw_line_segment_mut(
+        draw_hollow_rect_mut(
             &mut self.plot,
-            (self.start_x, self.start_y),
-            (self.end_x, self.start_y),
-            Rgb([0, 0, 0]),
-        );
-
-        draw_line_segment_mut(
-            &mut self.plot,
-            (self.start_x, self.end_y),
-            (self.end_x, self.end_y),
-            Rgb([0, 0, 0]),
-        );
-
-        draw_line_segment_mut(
-            &mut self.plot,
-            (self.start_x, self.start_y),
-            (self.start_x, self.end_y),
-            Rgb([0, 0, 0]),
-        );
-
-        draw_line_segment_mut(
-            &mut self.plot,
-            (self.end_x, self.start_y),
-            (self.end_x, self.end_y),
+            Rect::at(self.start_x as i32, self.start_y as i32).of_size(
+                (self.end_x - self.start_x) as u32,
+                (self.end_y - self.start_y) as u32,
+            ),
             Rgb([0, 0, 0]),
         );
     }
