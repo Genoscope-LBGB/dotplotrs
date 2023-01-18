@@ -2,8 +2,10 @@ use std::collections::HashMap;
 
 use crate::{config::Config, parser::PafRecord};
 use image::{Rgb, RgbImage};
-use imageproc::drawing::draw_line_segment_mut;
-use nannou::math::map_range;
+use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
+use imageproc::geometric_transformations::{rotate, Interpolation};
+use num_traits::NumCast;
+use rusttype::{Font, Scale};
 
 pub struct TargetCoord {
     pub start: f32,
@@ -47,6 +49,7 @@ impl<'a> Dotplot<'a> {
         dotplot.init_plot();
         dotplot
     }
+
     // Initializes the dotplot with a blank background and empty axes
     fn init_plot(&mut self) {
         self.init_background();
@@ -100,18 +103,21 @@ impl<'a> Dotplot<'a> {
         let query_coords = self.queries_to_coords(records);
         self.draw_query_ticks(&query_coords);
 
-        self.draw_alignments(records, target_coords, query_coords);
+        self.draw_alignments(records, &target_coords, &query_coords);
+
+        self.draw_target_names(&target_coords);
+        self.draw_query_names(&query_coords);
     }
 
     fn draw_alignments(
         &mut self,
         records_vec: &[(String, Vec<PafRecord>)],
-        target_coords: HashMap<String, TargetCoord>,
-        query_coords: HashMap<String, QueryCoord>,
+        target_coords: &HashMap<String, TargetCoord>,
+        query_coords: &HashMap<String, QueryCoord>,
     ) {
         for (_, records) in records_vec.iter() {
             for record in records.iter() {
-                self.draw_alignment(record, &target_coords, &query_coords);
+                self.draw_alignment(record, target_coords, query_coords);
             }
         }
     }
@@ -158,11 +164,11 @@ impl<'a> Dotplot<'a> {
             &mut self.plot,
             (tstart_px, qstart_px),
             (tend_px, qend_px),
-            Rgb([0, 0, 0]),
+            Rgb([100, 0, 0]),
         );
     }
 
-    // Gets the porsition of each target on the x-axis
+    // Gets the position of each target on the x-axis
     fn targets_to_coords(
         &self,
         records: &[(String, Vec<PafRecord>)],
@@ -294,8 +300,124 @@ impl<'a> Dotplot<'a> {
         }
     }
 
+    fn draw_target_names(&mut self, target_coords: &HashMap<String, TargetCoord>) {
+        let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
+        let font = Font::try_from_vec(font).unwrap();
+
+        let height = 12.4;
+        let scale = Scale {
+            x: height * 2.0,
+            y: height,
+        };
+
+        for (target, TargetCoord { start, end }) in target_coords.iter() {
+            let mut text_size_x = (target.len() as f32) * height;
+            let middle_x = (end - start) / 2.0;
+
+            let mut text = String::from(&target[..]);
+            if text_size_x >= (end - start) {
+                let nb_chars = usize::min(((end - start) / height) as usize, target.len());
+                if nb_chars < 4 {
+                    text = String::new();
+                } else {
+                    text = String::from(&target[0..(nb_chars - 3)]) + "...";
+                }
+                text_size_x = (text.len() as f32) * height;
+            }
+
+            draw_text_mut(
+                &mut self.plot,
+                Rgb([0, 0, 0]),
+                (*start + (middle_x - (text_size_x / 2.0))) as i32,
+                (self.end_y + 10.0) as i32,
+                scale,
+                &font,
+                &text,
+            );
+        }
+    }
+
+    fn draw_query_names(&mut self, query_coords: &HashMap<String, QueryCoord>) {
+        // Rotates the image to write on the y-axis
+        let center_x = self.config.width as f32 / 2.0;
+        let center_y = self.config.height as f32 / 2.0;
+        self.plot = rotate(
+            &self.plot,
+            (center_x, center_y),
+            -std::f32::consts::FRAC_PI_2,
+            Interpolation::Bicubic,
+            Rgb([0, 0, 0]),
+        );
+
+        let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
+        let font = Font::try_from_vec(font).unwrap();
+
+        let height = 12.4;
+        let scale = Scale {
+            x: height * 2.0,
+            y: height,
+        };
+
+        for (query, QueryCoord { start, end }) in query_coords.iter() {
+            let mut text_size_x = (query.len() as f32) * height;
+            let middle_x = (end - start) / 2.0;
+
+            let mut text = String::from(&query[..]);
+            if text_size_x >= (end - start) {
+                let nb_chars = usize::min(((end - start) / height) as usize, query.len());
+                if nb_chars < 4 {
+                    text = String::new();
+                } else {
+                    text = String::from(&query[0..(nb_chars - 3)]) + "...";
+                }
+                text_size_x = (text.len() as f32) * height;
+            }
+
+            draw_text_mut(
+                &mut self.plot,
+                Rgb([0, 0, 0]),
+                (*start + (middle_x - (text_size_x / 2.0))) as i32,
+                (self.end_y + 10.0) as i32,
+                scale,
+                &font,
+                &text,
+            );
+        }
+
+        // Rotates the image back
+        self.plot = rotate(
+            &self.plot,
+            (center_x, center_y),
+            std::f32::consts::FRAC_PI_2,
+            Interpolation::Bicubic,
+            Rgb([0, 0, 0]),
+        );
+    }
+
     // Saves the plot to a file
     pub fn save(&self) {
         self.plot.save(&self.config.output).unwrap();
     }
+}
+
+// Taken from nannou::math
+pub fn map_range<X, Y>(val: X, in_min: X, in_max: X, out_min: Y, out_max: Y) -> Y
+where
+    X: NumCast,
+    Y: NumCast,
+{
+    macro_rules! unwrap_or_panic {
+        ($result:expr, $arg:expr) => {
+            $result.unwrap_or_else(|| panic!("[map_range] failed to cast {} arg to `f64`", $arg))
+        };
+    }
+
+    let val_f: f64 = unwrap_or_panic!(NumCast::from(val), "first");
+    let in_min_f: f64 = unwrap_or_panic!(NumCast::from(in_min), "second");
+    let in_max_f: f64 = unwrap_or_panic!(NumCast::from(in_max), "third");
+    let out_min_f: f64 = unwrap_or_panic!(NumCast::from(out_min), "fourth");
+    let out_max_f: f64 = unwrap_or_panic!(NumCast::from(out_max), "fifth");
+
+    NumCast::from((val_f - in_min_f) / (in_max_f - in_min_f) * (out_max_f - out_min_f) + out_min_f)
+        .unwrap_or_else(|| panic!("[map_range] failed to cast result to target type"))
 }
