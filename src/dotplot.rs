@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use crate::{config::Config, parser::PafRecord};
 use image::{Rgb, RgbImage};
-use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
+use imageproc::drawing::{draw_filled_rect, draw_line_segment_mut, draw_text_mut};
 use imageproc::geometric_transformations::{rotate, Interpolation};
+use imageproc::rect::Rect;
 use num_traits::NumCast;
 use rusttype::{Font, Scale};
 
@@ -58,11 +59,11 @@ impl<'a> Dotplot<'a> {
 
     // Initialize the background to white
     fn init_background(&mut self) {
-        for x in 0..self.config.width {
-            for y in 0..self.config.height {
-                self.plot.put_pixel(x, y, Rgb([255, 255, 255]));
-            }
-        }
+        self.plot = draw_filled_rect(
+            &self.plot,
+            Rect::at(0, 0).of_size(self.config.width, self.config.height),
+            Rgb([255, 255, 255]),
+        );
     }
 
     // Draws blank axes
