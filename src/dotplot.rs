@@ -116,15 +116,15 @@ impl<'a> Dotplot<'a> {
             record.tstart as f32,
             1.0,
             record.tlen as f32,
-            tcoords.start as f32,
-            tcoords.end as f32,
+            tcoords.start,
+            tcoords.end,
         );
         let tend_px = map_range(
             record.tend as f32,
             1.0,
             record.tlen as f32,
-            tcoords.start as f32,
-            tcoords.end as f32,
+            tcoords.start,
+            tcoords.end,
         );
 
         let qcoords = query_coords.get(&record.qname).unwrap();
@@ -132,22 +132,22 @@ impl<'a> Dotplot<'a> {
             record.qstart as f32,
             1.0,
             record.qlen as f32,
-            qcoords.start as f32,
-            qcoords.end as f32,
+            qcoords.start,
+            qcoords.end,
         );
         let qend_px = map_range(
             record.qend as f32,
             1.0,
             record.qlen as f32,
-            qcoords.start as f32,
-            qcoords.end as f32,
+            qcoords.start,
+            qcoords.end,
         );
 
         draw_line_segment_mut(
             &mut self.plot,
             (tstart_px, qstart_px),
             (tend_px, qend_px),
-            Rgba([0, 0, 0, 130]),
+            Rgba([0, 0, 0, 255]),
         );
     }
 
@@ -187,6 +187,8 @@ impl<'a> Dotplot<'a> {
         let query_sizes = self.get_query_sizes_in_bp(records_vec);
         let total_size = query_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
+        let best_matching_chrs = Self::get_best_matching_chrs(records_vec);
+
         let axis_size = self.end_y - self.start_y;
         let px_per_bp = axis_size as f64 / total_size as f64;
 
@@ -199,6 +201,12 @@ impl<'a> Dotplot<'a> {
                 }
 
                 for record in records.iter() {
+                    let best_matching_chr = best_matching_chrs.get(&record.qname).unwrap();
+                    if *best_matching_chr != tname {
+                        continue;
+                    }
+                    
+
                     let segment_size = (record.qlen as f64 * px_per_bp) as f32;
                     let end_coord = last_pos + segment_size;
                     let query_coords = QueryCoord {
@@ -241,7 +249,7 @@ impl<'a> Dotplot<'a> {
     fn get_query_sizes_in_bp(
         &self,
         records_vec: &[(String, Vec<PafRecord>)],
-    ) -> Vec<(String, u64)> {
+    ) -> HashMap<String, u64> {
         let mut query_sizes: HashMap<String, u64> = HashMap::new();
 
         for (_, records) in records_vec.iter() {
@@ -252,9 +260,56 @@ impl<'a> Dotplot<'a> {
             }
         }
 
-        let mut query_sizes_vec = Vec::from_iter(query_sizes);
-        query_sizes_vec.sort_by(|&(_, qlen_1), &(_, qlen_2)| qlen_1.cmp(&qlen_2));
-        query_sizes_vec
+        // let mut query_sizes_vec = Vec::from_iter(query_sizes);
+        // query_sizes_vec.sort_by(|&(_, qlen_1), &(_, qlen_2)| qlen_1.cmp(&qlen_2));
+        // query_sizes_vec
+        query_sizes
+    }
+
+    // Get the best matching chromosome for each query
+    fn get_best_matching_chrs(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<String, String> {
+        log::debug!("Finding best matching chromosome");
+
+        let gravities = Self::compute_gravity(records_vec);
+        let mut best_gravity = HashMap::new();
+        let mut best_matching_chr = HashMap::new();
+
+        for ((target, query), gravity) in gravities.iter() {
+            let g = best_gravity.entry(query).or_insert(gravity);
+
+            if gravity >= *g {
+                best_gravity
+                    .entry(query)
+                    .and_modify(|grav| *grav = gravity);
+
+                best_matching_chr
+                    .entry(query.clone())
+                    .and_modify(|t| *t = target.clone())
+                    .or_insert(target.clone());
+            }
+        }
+
+        best_matching_chr
+    }
+
+    fn compute_gravity(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<(String, String), f64> {
+        let mut gravity: HashMap<(String, String), f64> = HashMap::new(); 
+
+        for (target, records) in records_vec.iter() {
+            for record in records.iter() {
+                let tsize_sq = (record.tend - record.tstart).pow(2);
+                let qsize_sq = (record.qend as i64 - record.qstart as i64).abs().pow(2) as u64;
+                let l = ((tsize_sq + qsize_sq) as f64).sqrt();
+                let gravity_compound = (1.0 + l).powi(2);
+
+                gravity
+                    .entry((target.clone(), record.qname.clone()))
+                    .and_modify(|g| *g += gravity_compound)
+                    .or_insert(gravity_compound);
+            }
+        }
+
+        gravity
     }
 
     fn draw_target_ticks(&mut self, coords: &HashMap<String, TargetCoord>) {
@@ -266,6 +321,18 @@ impl<'a> Dotplot<'a> {
                     (*start, self.end_y + 10.0),
                     Rgba([0, 0, 0, 255]),
                 );
+
+                let grid_line_size = self.config.height as f32 * 0.0025;
+                let mut y = self.start_y;
+                while y + grid_line_size < self.end_y {
+                    draw_line_segment_mut(
+                        &mut self.plot,
+                        (*start, y),
+                        (*start, y + grid_line_size),
+                        Rgba([0, 0, 0, 255]),
+                    );
+                    y += 2.0 * grid_line_size;
+                } 
             }
         }
     }
@@ -279,6 +346,18 @@ impl<'a> Dotplot<'a> {
                     (self.start_x - 10.0, *start),
                     Rgba([0, 0, 0, 255]),
                 );
+
+                let grid_line_size = self.config.width as f32 * 0.0025;
+                let mut x = self.start_x;
+                while x + grid_line_size < self.end_x {
+                    draw_line_segment_mut(
+                        &mut self.plot,
+                        (x, *start),
+                        (x + grid_line_size, *start),
+                        Rgba([0, 0, 0, 255]),
+                    );
+                    x += 2.0 * grid_line_size;
+                } 
             }
         }
     }

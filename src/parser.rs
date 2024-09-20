@@ -33,16 +33,17 @@ impl PafRecord {
     }
 }
 
-pub fn parse_paf(input_paf: &String, min_aln_size: f32) -> Vec<(String, Vec<PafRecord>)> {
-    let paf = File::open(input_paf);
-    let reader = BufReader::new(paf.unwrap());
+pub fn parse_paf(input_paf: &String, min_aln_size: u64) -> Vec<(String, Vec<PafRecord>)> {
+    let reader = File::open(input_paf)
+        .map(BufReader::new)
+        .unwrap();
 
     let mut records_hash: HashMap<String, Vec<PafRecord>> = HashMap::new();
     for line in reader.lines() {
         let record = PafRecord::from_paf_line(line.unwrap());
 
-        let aln_size = record.tend as f32 - record.tstart as f32;
-        if aln_size as f32 >= min_aln_size {
+        let aln_size = record.tend - record.tstart;
+        if aln_size >= min_aln_size {
             match records_hash.get_mut(&record.tname) {
                 Some(records) => records.push(record),
                 None => {

@@ -7,23 +7,26 @@ pub fn parse_args() -> Config {
         .arg(Arg::new("paf").short('p').long("paf").required(true))
         .arg(
             Arg::new("minalnsize")
+                .short('m')
                 .long("min-aln-size")
                 .required(false)
-                .value_parser(value_parser!(f32))
-                .default_value("0.0")
+                .value_parser(value_parser!(u64))
+                .default_value("0")
                 .help("Only displays alignment longer than this value"),
         )
         .arg(
             Arg::new("height")
                 .long("height")
-                .required(true)
+                .required(false)
+                .default_value("2000")
                 .value_parser(value_parser!(u32))
                 .help("Height of the image"),
         )
         .arg(
             Arg::new("width")
                 .long("width")
-                .required(true)
+                .required(false)
+                .default_value("2000")
                 .value_parser(value_parser!(u32))
                 .help("Width of the image"),
         )
@@ -67,7 +70,7 @@ pub fn parse_args() -> Config {
 
     Config {
         paf: args.get_one::<String>("paf").unwrap().clone(),
-        min_aln_size: args.get_one::<f32>("minalnsize").unwrap().to_owned(),
+        min_aln_size: args.get_one::<u64>("minalnsize").unwrap().to_owned(),
         height: args.get_one::<u32>("height").unwrap().to_owned(),
         width: args.get_one::<u32>("width").unwrap().to_owned(),
         margin_x: args.get_one::<f32>("marginx").unwrap().to_owned(),

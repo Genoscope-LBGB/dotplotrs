@@ -1,6 +1,6 @@
 pub struct Config {
     pub paf: String,
-    pub min_aln_size: f32,
+    pub min_aln_size: u64,
     pub height: u32,
     pub width: u32,
     pub margin_x: f32,
