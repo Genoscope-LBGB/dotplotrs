@@ -1,7 +1,7 @@
 use crate::{config::Config, parser::PafRecord};
-use image::{Rgba, RgbaImage};
+use image::{Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
-    draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut,
+    draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut
 };
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
@@ -143,12 +143,27 @@ impl<'a> Dotplot<'a> {
             qcoords.end,
         );
 
-        draw_line_segment_mut(
+        // draw_line_segment_mut(
+        //     &mut self.plot,
+        //     (tstart_px, qstart_px),
+        //     (tend_px, qend_px),
+        //     Rgba([0, 0, 0, 255]),
+        // );
+        draw_antialiased_line_segment_mut(
             &mut self.plot,
-            (tstart_px, qstart_px),
-            (tend_px, qend_px),
+            (tstart_px as i32, qstart_px as i32),
+            (tend_px as i32, qend_px as i32),
             Rgba([0, 0, 0, 255]),
+            Self::interpolate,
         );
+    }
+
+    fn interpolate<P: Pixel>(left: P, right: P, _left_weight: f32) -> P 
+        where 
+            P: Pixel,
+            P::Subpixel: conv::ValueInto<f32> + imageproc::definitions::Clamp<f32>
+        {
+        imageproc::pixelops::interpolate(left, right, 1000.0)
     }
 
     // Gets the position of each target on the x-axis
@@ -193,7 +208,7 @@ impl<'a> Dotplot<'a> {
         let px_per_bp = axis_size as f64 / total_size as f64;
 
         let mut coords = HashMap::new();
-        let mut last_pos = self.start_y;
+        let mut last_pos = self.end_y;
         for (tname, _) in targets_sizes {
             for (tname_records, records) in records_vec.iter() {
                 if *tname_records != tname {
@@ -208,10 +223,10 @@ impl<'a> Dotplot<'a> {
                     
 
                     let segment_size = (record.qlen as f64 * px_per_bp) as f32;
-                    let end_coord = last_pos + segment_size;
+                    let end_coord = last_pos - segment_size;
                     let query_coords = QueryCoord {
-                        start: last_pos,
-                        end: end_coord,
+                        start: end_coord,
+                        end: last_pos,
                     };
                     match coords.get(&record.qname) {
                         Some(_) => {}
