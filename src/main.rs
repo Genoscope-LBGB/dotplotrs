@@ -22,7 +22,7 @@ fn main() {
 
     info!("Building the dotplot");
     let mut dotplot = Dotplot::new(&config);
-    dotplot.draw(&records);
+    dotplot.draw(records);
 
     dotplot.save();
 }

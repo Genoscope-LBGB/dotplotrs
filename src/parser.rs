@@ -13,6 +13,7 @@ pub struct PafRecord {
     pub tstart: u64,
     pub tend: u64,
     pub nb_matches: u64,
+    pub is_best_matching_chr: bool,
 }
 
 impl PafRecord {
@@ -29,6 +30,7 @@ impl PafRecord {
             tstart: split_line[7].parse::<u64>().unwrap(),
             tend: split_line[8].parse::<u64>().unwrap(),
             nb_matches: split_line[9].parse::<u64>().unwrap(),
+            is_best_matching_chr: false,
         }
     }
 }

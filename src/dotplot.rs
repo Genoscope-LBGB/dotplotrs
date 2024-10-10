@@ -1,7 +1,7 @@
 use crate::{config::Config, parser::PafRecord};
 use image::{Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
-    draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut
+    draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size
 };
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
@@ -79,14 +79,14 @@ impl<'a> Dotplot<'a> {
         );
     }
 
-    pub fn draw(&mut self, records: &[(String, Vec<PafRecord>)]) {
-        let target_coords = self.targets_to_coords(records);
+    pub fn draw(&mut self, mut records: Vec<(String, Vec<PafRecord>)>) {
+        let target_coords = self.targets_to_coords(&records);
         self.draw_target_ticks(&target_coords);
 
-        let query_coords = self.queries_to_coords(records);
+        let query_coords = self.queries_to_coords(&mut records);
         self.draw_query_ticks(&query_coords);
 
-        self.draw_alignments(records, &target_coords, &query_coords);
+        self.draw_alignments(&records, &target_coords, &query_coords);
 
         self.draw_target_names(&target_coords);
         self.draw_query_names(&query_coords);
@@ -143,12 +143,6 @@ impl<'a> Dotplot<'a> {
             qcoords.end,
         );
 
-        // draw_line_segment_mut(
-        //     &mut self.plot,
-        //     (tstart_px, qstart_px),
-        //     (tend_px, qend_px),
-        //     Rgba([0, 0, 0, 255]),
-        // );
         draw_antialiased_line_segment_mut(
             &mut self.plot,
             (tstart_px as i32, qstart_px as i32),
@@ -156,6 +150,16 @@ impl<'a> Dotplot<'a> {
             Rgba([0, 0, 0, 255]),
             Self::interpolate,
         );
+        // Emphasize alignments that are on the best matching chromosome
+        if record.is_best_matching_chr {
+            draw_antialiased_line_segment_mut(
+                &mut self.plot,
+                (tstart_px as i32, qstart_px as i32 + 1),
+                (tend_px as i32, qend_px as i32 + 1),
+                Rgba([0, 0, 0, 255]),
+                Self::interpolate,
+            );
+        }
     }
 
     fn interpolate<P: Pixel>(left: P, right: P, _left_weight: f32) -> P 
@@ -166,7 +170,7 @@ impl<'a> Dotplot<'a> {
         imageproc::pixelops::interpolate(left, right, 1000.0)
     }
 
-    // Gets the position of each target on the x-axis
+    // Gets the position of each target on the x-axis, sorted by size
     fn targets_to_coords(
         &self,
         records: &[(String, Vec<PafRecord>)],
@@ -193,10 +197,10 @@ impl<'a> Dotplot<'a> {
         coords
     }
 
-    // Gets the porsition of each target on the x-axis
+    // Gets the porsition of each query on the y-axis, sorted by gravity
     fn queries_to_coords(
         &self,
-        records_vec: &[(String, Vec<PafRecord>)],
+        records_vec: &mut [(String, Vec<PafRecord>)],
     ) -> HashMap<String, QueryCoord> {
         let targets_sizes = self.get_target_sizes_in_bp(records_vec);
         let query_sizes = self.get_query_sizes_in_bp(records_vec);
@@ -210,17 +214,17 @@ impl<'a> Dotplot<'a> {
         let mut coords = HashMap::new();
         let mut last_pos = self.end_y;
         for (tname, _) in targets_sizes {
-            for (tname_records, records) in records_vec.iter() {
+            for (tname_records, records) in records_vec.iter_mut() {
                 if *tname_records != tname {
                     continue;
                 }
 
-                for record in records.iter() {
+                for record in records.iter_mut() {
                     let best_matching_chr = best_matching_chrs.get(&record.qname).unwrap();
                     if *best_matching_chr != tname {
                         continue;
                     }
-                    
+                    record.is_best_matching_chr = true;
 
                     let segment_size = (record.qlen as f64 * px_per_bp) as f32;
                     let end_coord = last_pos - segment_size;
@@ -275,9 +279,6 @@ impl<'a> Dotplot<'a> {
             }
         }
 
-        // let mut query_sizes_vec = Vec::from_iter(query_sizes);
-        // query_sizes_vec.sort_by(|&(_, qlen_1), &(_, qlen_2)| qlen_1.cmp(&qlen_2));
-        // query_sizes_vec
         query_sizes
     }
 
@@ -307,15 +308,24 @@ impl<'a> Dotplot<'a> {
         best_matching_chr
     }
 
-    fn compute_gravity(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<(String, String), f64> {
-        let mut gravity: HashMap<(String, String), f64> = HashMap::new(); 
+    fn compute_gravity(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<(String, String), u64> {
+        let mut gravity: HashMap<(String, String), u64> = HashMap::new(); 
 
         for (target, records) in records_vec.iter() {
             for record in records.iter() {
-                let tsize_sq = (record.tend - record.tstart).pow(2);
-                let qsize_sq = (record.qend as i64 - record.qstart as i64).abs().pow(2) as u64;
-                let l = ((tsize_sq + qsize_sq) as f64).sqrt();
-                let gravity_compound = (1.0 + l).powi(2);
+                // let (x_1, x_2) = (
+                //     std::cmp::min(record.tstart, record.tend), 
+                //     std::cmp::max(record.tstart, record.tend)
+                // );
+                // let (y_1, y_2) = (
+                //     std::cmp::min(record.qstart, record.qend), 
+                //     std::cmp::max(record.qstart, record.qend)
+                // );
+                // let tsize_sq = (x_2 - x_1).pow(2);
+                // let qsize_sq = (y_2 - y_1).pow(2);
+                // let l = ((tsize_sq + qsize_sq) as f64).sqrt();
+                // let gravity_compound = (1.0 + l).powi(2);
+                let gravity_compound = record.nb_matches.pow(2);
 
                 gravity
                     .entry((target.clone(), record.qname.clone()))
@@ -380,23 +390,30 @@ impl<'a> Dotplot<'a> {
     fn draw_target_names(&mut self, target_coords: &HashMap<String, TargetCoord>) {
         let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
         let font = Font::try_from_vec(font).unwrap();
-
         let height = 12.4;
         let scale = Scale {
-            x: height * 2.0,
+            x: height,
             y: height,
         };
 
-        for (target, TargetCoord { start, end }) in target_coords.iter() {
-            let middle_x = (end - start) / 2.0;
+        let mut offset = 5.0;
+        let mut target_coords_sorted = Vec::from_iter(target_coords);
+        target_coords_sorted
+            .sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
+        
+        for (target, TargetCoord { start, end }) in target_coords_sorted.iter() {
+            let middle_x = (end + start) / 2.0;
             let text = Self::get_text(target, *start, *end, height);
-            let text_size_x = (text.len() as f32) * height;
+            let text_size = text_size(scale, &font, &text);
 
+            offset = -offset;
+
+            let word_start = (middle_x - (text_size.0 as f32 / 2.0)) as i32;
             draw_text_mut(
                 &mut self.plot,
                 Rgba([0, 0, 0, 255]),
-                (*start + (middle_x - (text_size_x / 2.0))) as i32,
-                (self.end_y + 10.0) as i32,
+                word_start,
+                (self.end_y + 10.0 + offset) as i32,
                 scale,
                 &font,
                 &text,
@@ -411,20 +428,27 @@ impl<'a> Dotplot<'a> {
         let font = Font::try_from_vec(font).unwrap();
         let height = 12.4;
         let scale = Scale {
-            x: height * 2.0,
+            x: height,
             y: height,
         };
 
-        for (query, QueryCoord { start, end }) in query_coords.iter() {
-            let middle_x = (end - start) / 2.0;
-            let text = Self::get_text(query, *start, *end, height);
-            let text_size_x = (text.len() as f32) * height;
+        let mut offset = 5.0;
 
+        let mut query_coords_sorted = Vec::from_iter(query_coords);
+        query_coords_sorted
+            .sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
+        for (query, QueryCoord { start, end }) in query_coords_sorted.iter() {
+            let middle_x = (end + start) / 2.0;
+            let text = Self::get_text(query, *start, *end, height); 
+            let text_size = text_size(scale, &font, &text);
+            offset = -offset;
+
+            let word_start = (middle_x - (text_size.0 as f32 / 2.0)) as i32;
             draw_text_mut(
                 &mut self.plot,
                 Rgba([0, 0, 0, 255]),
-                (*start + (middle_x - (text_size_x / 2.0))) as i32,
-                (self.end_y + 10.0) as i32,
+                word_start,
+                (self.end_y + 10.0 + offset) as i32,
                 scale,
                 &font,
                 &text,
@@ -440,12 +464,14 @@ impl<'a> Dotplot<'a> {
 
         if text_size_x >= (end - start) {
             let nb_chars = usize::min(((end - start) / height) as usize, query.len());
+            // let nb_chars = query.len() + 3;
 
-            if nb_chars < 4 {
+            if nb_chars < 2 {
                 text = String::new();
-            } else {
-                text = String::from(&query[0..(nb_chars - 3)]) + "...";
-            }
+            } 
+            // else {
+            //     text = String::from(&query[0..(nb_chars - 3)]) + "...";
+            // }
         }
 
         text
