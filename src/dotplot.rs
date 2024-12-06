@@ -229,8 +229,8 @@ impl<'a> Dotplot<'a> {
                     let segment_size = (record.qlen as f64 * px_per_bp) as f32;
                     let end_coord = last_pos - segment_size;
                     let query_coords = QueryCoord {
-                        start: end_coord,
-                        end: last_pos,
+                        start: last_pos,
+                        end: end_coord,
                     };
                     match coords.get(&record.qname) {
                         Some(_) => {}
@@ -439,9 +439,11 @@ impl<'a> Dotplot<'a> {
             .sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
         for (query, QueryCoord { start, end }) in query_coords_sorted.iter() {
             let middle_x = (end + start) / 2.0;
-            let text = Self::get_text(query, *start, *end, height); 
+            let text = Self::get_text(query, *end, *start, height); 
             let text_size = text_size(scale, &font, &text);
-            offset = -offset;
+            if !text.is_empty() {
+                offset = -offset;
+            }
 
             let word_start = (middle_x - (text_size.0 as f32 / 2.0)) as i32;
             draw_text_mut(
