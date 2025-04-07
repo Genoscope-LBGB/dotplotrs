@@ -1,4 +1,5 @@
 use crate::{config::Config, parser::PafRecord};
+use ab_glyph::PxScale;
 use image::{Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size
@@ -6,7 +7,6 @@ use imageproc::drawing::{
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
 use num_traits::NumCast;
-use rusttype::{Font, Scale};
 use std::collections::HashMap;
 
 pub struct TargetCoord {
@@ -143,31 +143,50 @@ impl<'a> Dotplot<'a> {
             qcoords.end,
         );
 
-        draw_antialiased_line_segment_mut(
-            &mut self.plot,
-            (tstart_px as i32, qstart_px as i32),
-            (tend_px as i32, qend_px as i32),
-            Rgba([0, 0, 0, 255]),
-            Self::interpolate,
-        );
-        // Emphasize alignments that are on the best matching chromosome
-        if record.is_best_matching_chr {
+        let thickness = if record.is_best_matching_chr { 
+            self.config.line_thickness * 4
+        } else {
+            self.config.line_thickness
+        };
+        
+        // Calculate the line direction vector
+        let dx = tend_px - tstart_px;
+        let dy = qend_px - qstart_px;
+        let line_length = (dx * dx + dy * dy).sqrt();
+        
+        // Normalize the direction vector
+        let nx = dx / line_length;
+        let ny = dy / line_length;
+        
+        // Calculate the perpendicular vector (rotate 90 degrees)
+        let px = -ny;
+        let py = nx;
+        
+        // Draw parallel lines to create a thicker line
+        for offset in 1..=thickness {
+            // Calculate offset distance from the center line
+            let offset_dist = (offset as f32 - thickness as f32 / 2.0) * 0.5;
+            
+            // Calculate the offset points
+            let offset_x = px * offset_dist;
+            let offset_y = py * offset_dist;
+            
             draw_antialiased_line_segment_mut(
                 &mut self.plot,
-                (tstart_px as i32, qstart_px as i32 + 1),
-                (tend_px as i32, qend_px as i32 + 1),
+                ((tstart_px + offset_x) as i32, (qstart_px + offset_y) as i32),
+                ((tend_px + offset_x) as i32, (qend_px + offset_y) as i32),
                 Rgba([0, 0, 0, 255]),
                 Self::interpolate,
             );
+            
         }
     }
 
     fn interpolate<P: Pixel>(left: P, right: P, _left_weight: f32) -> P 
-        where 
-            P: Pixel,
-            P::Subpixel: conv::ValueInto<f32> + imageproc::definitions::Clamp<f32>
+        where
+        P::Subpixel: Into<f32> + imageproc::definitions::Clamp<f32>,
         {
-        imageproc::pixelops::interpolate(left, right, 1000.0)
+        imageproc::pixelops::interpolate(left, right, 2.0)
     }
 
     // Gets the position of each target on the x-axis, sorted by size
@@ -313,18 +332,6 @@ impl<'a> Dotplot<'a> {
 
         for (target, records) in records_vec.iter() {
             for record in records.iter() {
-                // let (x_1, x_2) = (
-                //     std::cmp::min(record.tstart, record.tend), 
-                //     std::cmp::max(record.tstart, record.tend)
-                // );
-                // let (y_1, y_2) = (
-                //     std::cmp::min(record.qstart, record.qend), 
-                //     std::cmp::max(record.qstart, record.qend)
-                // );
-                // let tsize_sq = (x_2 - x_1).pow(2);
-                // let qsize_sq = (y_2 - y_1).pow(2);
-                // let l = ((tsize_sq + qsize_sq) as f64).sqrt();
-                // let gravity_compound = (1.0 + l).powi(2);
                 let gravity_compound = record.nb_matches.pow(2);
 
                 gravity
@@ -389,9 +396,9 @@ impl<'a> Dotplot<'a> {
 
     fn draw_target_names(&mut self, target_coords: &HashMap<String, TargetCoord>) {
         let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
-        let font = Font::try_from_vec(font).unwrap();
+        let font = ab_glyph::FontVec::try_from_vec(font).unwrap();
         let height = 12.4;
-        let scale = Scale {
+        let scale = PxScale {
             x: height,
             y: height,
         };
@@ -425,9 +432,9 @@ impl<'a> Dotplot<'a> {
         self.rotate_image(-std::f32::consts::FRAC_PI_2);
 
         let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
-        let font = Font::try_from_vec(font).unwrap();
+        let font = ab_glyph::FontVec::try_from_vec(font).unwrap();
         let height = 12.4;
-        let scale = Scale {
+        let scale = PxScale {
             x: height,
             y: height,
         };
@@ -460,9 +467,9 @@ impl<'a> Dotplot<'a> {
         self.rotate_image(std::f32::consts::FRAC_PI_2);
     }
 
-    fn get_text(query: &String, start: f32, end: f32, height: f32) -> String {
+    fn get_text(query: &str, start: f32, end: f32, height: f32) -> String {
         let text_size_x = (query.len() as f32) * height;
-        let mut text = String::from(&query[..]);
+        let mut text = String::from(query);
 
         if text_size_x >= (end - start) {
             let nb_chars = usize::min(((end - start) / height) as usize, query.len());
