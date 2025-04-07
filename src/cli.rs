@@ -66,6 +66,14 @@ pub fn parse_args() -> Config {
                 .long("debug")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("linethickness")
+                .long("line-thickness")
+                .required(false)
+                .default_value("1")
+                .value_parser(value_parser!(u32))
+                .help("Thickness of lines (doubled for best matching chromosomes)"),
+        )
         .get_matches();
 
     Config {
@@ -78,6 +86,7 @@ pub fn parse_args() -> Config {
         font_size: args.get_one::<u32>("fontsize").unwrap().to_owned(),
         output: args.get_one::<String>("output").unwrap().clone(),
         debug: args.get_flag("debug"),
+        line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
     }
 }
 

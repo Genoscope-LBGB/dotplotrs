@@ -8,4 +8,5 @@ pub struct Config {
     pub font_size: u32,
     pub output: String,
     pub debug: bool,
+    pub line_thickness: u32,
 }

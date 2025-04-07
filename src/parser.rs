@@ -44,8 +44,8 @@ pub fn parse_paf(input_paf: &String, min_aln_size: u64) -> Vec<(String, Vec<PafR
     for line in reader.lines() {
         let record = PafRecord::from_paf_line(line.unwrap());
 
-        let aln_size = record.tend - record.tstart;
-        if aln_size >= min_aln_size {
+        let aln_size = record.tend as i64 - record.tstart as i64;
+        if i64::abs(aln_size) >= min_aln_size as i64 {
             match records_hash.get_mut(&record.tname) {
                 Some(records) => records.push(record),
                 None => {
