@@ -128,20 +128,41 @@ impl<'a> Dotplot<'a> {
         );
 
         let qcoords = query_coords.get(&record.qname).unwrap();
-        let qstart_px = map_range(
-            record.qstart as f32,
-            1.0,
-            record.qlen as f32,
-            qcoords.start,
-            qcoords.end,
-        );
-        let qend_px = map_range(
-            record.qend as f32,
-            1.0,
-            record.qlen as f32,
-            qcoords.start,
-            qcoords.end,
-        );
+        let (qstart_px, qend_px) = if record.strand == '-' {
+            // For reverse strand, flip the query coordinates
+            let qend_px = map_range(
+                record.qstart as f32,
+                1.0,
+                record.qlen as f32,
+                qcoords.start,
+                qcoords.end,
+            );
+            let qstart_px = map_range(
+                record.qend as f32,
+                1.0,
+                record.qlen as f32,
+                qcoords.start,
+                qcoords.end,
+            );
+            (qstart_px, qend_px)
+        } else {
+            // For forward strand, use coordinates as-is
+            let qstart_px = map_range(
+                record.qstart as f32,
+                1.0,
+                record.qlen as f32,
+                qcoords.start,
+                qcoords.end,
+            );
+            let qend_px = map_range(
+                record.qend as f32,
+                1.0,
+                record.qlen as f32,
+                qcoords.start,
+                qcoords.end,
+            );
+            (qstart_px, qend_px)
+        };
 
         let thickness = if record.is_best_matching_chr { 
             self.config.line_thickness * 4
