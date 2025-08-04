@@ -1,0 +1,18 @@
+include:
+  - project: rdbioseq/cicd
+    file: cicd.yml
+    inputs:
+      module-name: "dotplot"
+      cd-branch: "master"
+      other-branches-as-named: true
+
+stages: 
+  - deploy
+
+deploy:
+  stage: deploy
+  extends: .deploy
+
+deploy-futur:
+    stage: deploy
+    extends: .deploy-futur
