@@ -203,11 +203,11 @@ impl<'a> Dotplot<'a> {
         }
     }
 
-    fn interpolate<P: Pixel>(left: P, right: P, _left_weight: f32) -> P 
-        where
+    fn interpolate<P: Pixel>(left: P, right: P, left_weight: f32) -> P 
+    where
         P::Subpixel: Into<f32> + imageproc::definitions::Clamp<f32>,
-        {
-        imageproc::pixelops::interpolate(left, right, 2.0)
+    {
+        imageproc::pixelops::interpolate(left, right, left_weight)
     }
 
     // Gets the position of each target on the x-axis, sorted by size
