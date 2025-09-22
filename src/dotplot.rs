@@ -2,7 +2,8 @@ use crate::{config::Config, parser::PafRecord};
 use ab_glyph::PxScale;
 use image::{imageops::overlay, Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
-    draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size
+    draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut,
+    draw_line_segment_mut, draw_text_mut, text_size,
 };
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
@@ -164,34 +165,34 @@ impl<'a> Dotplot<'a> {
             (qstart_px, qend_px)
         };
 
-        let thickness = if record.is_best_matching_chr { 
+        let thickness = if record.is_best_matching_chr {
             self.config.line_thickness * 4
         } else {
             self.config.line_thickness
         };
-        
+
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
         let dy = qend_px - qstart_px;
         let line_length = (dx * dx + dy * dy).sqrt();
-        
+
         // Normalize the direction vector
         let nx = dx / line_length;
         let ny = dy / line_length;
-        
+
         // Calculate the perpendicular vector (rotate 90 degrees)
         let px = -ny;
         let py = nx;
-        
+
         // Draw parallel lines to create a thicker line
         for offset in 1..=thickness {
             // Calculate offset distance from the center line
             let offset_dist = (offset as f32 - thickness as f32 / 2.0) * 0.5;
-            
+
             // Calculate the offset points
             let offset_x = px * offset_dist;
             let offset_y = py * offset_dist;
-            
+
             draw_antialiased_line_segment_mut(
                 &mut self.plot,
                 ((tstart_px + offset_x) as i32, (qstart_px + offset_y) as i32),
@@ -199,11 +200,10 @@ impl<'a> Dotplot<'a> {
                 Rgba([0, 0, 0, 255]),
                 Self::interpolate,
             );
-            
         }
     }
 
-    fn interpolate<P: Pixel>(left: P, right: P, left_weight: f32) -> P 
+    fn interpolate<P: Pixel>(left: P, right: P, left_weight: f32) -> P
     where
         P::Subpixel: Into<f32> + imageproc::definitions::Clamp<f32>,
     {
@@ -334,9 +334,7 @@ impl<'a> Dotplot<'a> {
             let g = best_gravity.entry(query).or_insert(gravity);
 
             if gravity >= *g {
-                best_gravity
-                    .entry(query)
-                    .and_modify(|grav| *grav = gravity);
+                best_gravity.entry(query).and_modify(|grav| *grav = gravity);
 
                 best_matching_chr
                     .entry(query.clone())
@@ -349,7 +347,7 @@ impl<'a> Dotplot<'a> {
     }
 
     fn compute_gravity(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<(String, String), u64> {
-        let mut gravity: HashMap<(String, String), u64> = HashMap::new(); 
+        let mut gravity: HashMap<(String, String), u64> = HashMap::new();
 
         for (target, records) in records_vec.iter() {
             for record in records.iter() {
@@ -385,7 +383,7 @@ impl<'a> Dotplot<'a> {
                         Rgba([0, 0, 0, 255]),
                     );
                     y += 2.0 * grid_line_size;
-                } 
+                }
             }
         }
     }
@@ -410,7 +408,7 @@ impl<'a> Dotplot<'a> {
                         Rgba([0, 0, 0, 255]),
                     );
                     x += 2.0 * grid_line_size;
-                } 
+                }
             }
         }
     }
@@ -426,9 +424,8 @@ impl<'a> Dotplot<'a> {
 
         let mut offset = 5.0;
         let mut target_coords_sorted = Vec::from_iter(target_coords);
-        target_coords_sorted
-            .sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
-        
+        target_coords_sorted.sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
+
         for (target, TargetCoord { start, end }) in target_coords_sorted.iter() {
             let middle_x = (end + start) / 2.0;
             let text = Self::get_text(target, *start, *end, height);
@@ -467,13 +464,15 @@ impl<'a> Dotplot<'a> {
         let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
         let font = ab_glyph::FontVec::try_from_vec(font).unwrap();
         let height = 12.4;
-        let scale = PxScale { x: height, y: height };
+        let scale = PxScale {
+            x: height,
+            y: height,
+        };
 
         let mut offset = 5.0;
 
         let mut query_coords_sorted = Vec::from_iter(query_coords);
-        query_coords_sorted
-            .sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
+        query_coords_sorted.sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
         for (query, QueryCoord { start, end }) in query_coords_sorted.iter() {
             let middle_y = (end + start) / 2.0;
             let text = Self::get_text(query, *end, *start, height);
@@ -528,7 +527,7 @@ impl<'a> Dotplot<'a> {
 
             if nb_chars < 2 {
                 text = String::new();
-            } 
+            }
             // else {
             //     text = String::from(&query[0..(nb_chars - 3)]) + "...";
             // }

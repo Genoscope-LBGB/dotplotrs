@@ -96,12 +96,14 @@ pub fn parse_paf(
 }
 
 fn parse_u64(value: &str, field: &'static str, line_number: usize) -> Result<u64, PafError> {
-    value.parse::<u64>().map_err(|source| PafError::InvalidNumber {
-        line: line_number,
-        field,
-        value: value.to_string(),
-        source,
-    })
+    value
+        .parse::<u64>()
+        .map_err(|source| PafError::InvalidNumber {
+            line: line_number,
+            field,
+            value: value.to_string(),
+            source,
+        })
 }
 
 #[derive(Debug)]
@@ -128,18 +130,23 @@ impl Display for PafError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(err) => write!(f, "I/O error: {err}"),
-            Self::MissingColumns { line, expected, found } => write!(
+            Self::MissingColumns {
+                line,
+                expected,
+                found,
+            } => write!(
                 f,
                 "line {line}: expected at least {expected} tab-separated fields, found {found}"
             ),
-            Self::InvalidNumber { line, field, value, .. } => write!(
+            Self::InvalidNumber {
+                line, field, value, ..
+            } => write!(
                 f,
                 "line {line}: could not parse {field} value '{value}' as an integer"
             ),
-            Self::InvalidStrand { line, value } => write!(
-                f,
-                "line {line}: strand must be '+' or '-', found '{value}'"
-            ),
+            Self::InvalidStrand { line, value } => {
+                write!(f, "line {line}: strand must be '+' or '-', found '{value}'")
+            }
         }
     }
 }
