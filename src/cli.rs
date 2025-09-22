@@ -83,7 +83,6 @@ pub fn parse_args() -> Config {
         width: args.get_one::<u32>("width").unwrap().to_owned(),
         margin_x: args.get_one::<f32>("marginx").unwrap().to_owned(),
         margin_y: args.get_one::<f32>("marginy").unwrap().to_owned(),
-        font_size: args.get_one::<u32>("fontsize").unwrap().to_owned(),
         output: args.get_one::<String>("output").unwrap().clone(),
         debug: args.get_flag("debug"),
         line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
