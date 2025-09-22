@@ -173,11 +173,7 @@ impl<'a> Dotplot<'a> {
             (qstart_px, qend_px)
         };
 
-        let thickness = if record.is_best_matching_chr {
-            self.config.line_thickness * 4
-        } else {
-            self.config.line_thickness
-        };
+        self.config.line_thickness;
 
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
