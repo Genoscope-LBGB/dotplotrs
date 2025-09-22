@@ -174,7 +174,14 @@ impl<'a> Dotplot<'a> {
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
         let dy = qend_px - qstart_px;
-        let line_length = (dx * dx + dy * dy).sqrt();
+        let line_length_sq = dx * dx + dy * dy;
+
+        if line_length_sq <= f32::EPSILON {
+            self.draw_alignment_point(tstart_px, qstart_px, thickness.max(1));
+            return;
+        }
+
+        let line_length = line_length_sq.sqrt();
 
         // Normalize the direction vector
         let nx = dx / line_length;
@@ -208,6 +215,26 @@ impl<'a> Dotplot<'a> {
         P::Subpixel: Into<f32> + imageproc::definitions::Clamp<f32>,
     {
         imageproc::pixelops::interpolate(left, right, left_weight)
+    }
+
+    fn draw_alignment_point(&mut self, x: f32, y: f32, thickness: u32) {
+        let radius = ((thickness as f32 / 2.0).ceil() as i32).max(0);
+        let center_x = x.round() as i32;
+        let center_y = y.round() as i32;
+
+        let width = self.plot.width() as i32;
+        let height = self.plot.height() as i32;
+
+        for dx in -radius..=radius {
+            for dy in -radius..=radius {
+                let px = center_x + dx;
+                let py = center_y + dy;
+                if px >= 0 && px < width && py >= 0 && py < height {
+                    let (px_u32, py_u32) = (px as u32, py as u32);
+                    self.plot.put_pixel(px_u32, py_u32, Rgba([0, 0, 0, 255]));
+                }
+            }
+        }
     }
 
     // Gets the position of each target on the x-axis, sorted by size
