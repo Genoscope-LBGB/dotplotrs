@@ -82,9 +82,17 @@ impl<'a> Dotplot<'a> {
 
     pub fn draw(&mut self, mut records: Vec<(String, Vec<PafRecord>)>) {
         let target_coords = self.targets_to_coords(&records);
+        if target_coords.is_empty() {
+            log::warn!("No alignments available after filtering; nothing to draw");
+            return;
+        }
         self.draw_target_ticks(&target_coords);
 
         let query_coords = self.queries_to_coords(&mut records);
+        if query_coords.is_empty() {
+            log::warn!("No query coordinates available; nothing to draw");
+            return;
+        }
         self.draw_query_ticks(&query_coords);
 
         self.draw_alignments(&records, &target_coords, &query_coords);
@@ -246,6 +254,10 @@ impl<'a> Dotplot<'a> {
         let total_size = targets_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
         let axis_size = self.end_x - self.start_x;
+        if total_size == 0 {
+            return HashMap::new();
+        }
+
         let px_per_bp = axis_size as f64 / total_size as f64;
 
         let mut coords: HashMap<String, TargetCoord> = HashMap::new();
@@ -276,6 +288,10 @@ impl<'a> Dotplot<'a> {
         let best_matching_chrs = Self::get_best_matching_chrs(records_vec);
 
         let axis_size = self.end_y - self.start_y;
+        if total_size == 0 {
+            return HashMap::new();
+        }
+
         let px_per_bp = axis_size as f64 / total_size as f64;
 
         let mut coords = HashMap::new();
