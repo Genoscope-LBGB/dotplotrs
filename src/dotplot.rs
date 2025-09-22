@@ -114,14 +114,14 @@ impl<'a> Dotplot<'a> {
         let tcoords = target_coords.get(&record.tname).unwrap();
         let tstart_px = map_range(
             record.tstart as f32,
-            1.0,
+            0.0,
             record.tlen as f32,
             tcoords.start,
             tcoords.end,
         );
         let tend_px = map_range(
             record.tend as f32,
-            1.0,
+            0.0,
             record.tlen as f32,
             tcoords.start,
             tcoords.end,
@@ -132,14 +132,14 @@ impl<'a> Dotplot<'a> {
             // For reverse strand, flip the query coordinates
             let qend_px = map_range(
                 record.qstart as f32,
-                1.0,
+                0.0,
                 record.qlen as f32,
                 qcoords.start,
                 qcoords.end,
             );
             let qstart_px = map_range(
                 record.qend as f32,
-                1.0,
+                0.0,
                 record.qlen as f32,
                 qcoords.start,
                 qcoords.end,
@@ -149,14 +149,14 @@ impl<'a> Dotplot<'a> {
             // For forward strand, use coordinates as-is
             let qstart_px = map_range(
                 record.qstart as f32,
-                1.0,
+                0.0,
                 record.qlen as f32,
                 qcoords.start,
                 qcoords.end,
             );
             let qend_px = map_range(
                 record.qend as f32,
-                1.0,
+                0.0,
                 record.qlen as f32,
                 qcoords.start,
                 qcoords.end,
