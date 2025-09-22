@@ -6,8 +6,9 @@ mod parser;
 
 use cli::{parse_args, setup_logging};
 use dotplot::Dotplot;
-use log::{debug, info, LevelFilter};
+use log::{debug, error, info, LevelFilter};
 use parser::parse_paf;
+use std::error::Error;
 
 fn main() {
     let config = parse_args();
@@ -17,7 +18,16 @@ fn main() {
     }
 
     info!("Reading PAF file: {}", config.paf);
-    let records = parse_paf(&config.paf, config.min_aln_size);
+    let records = match parse_paf(&config.paf, config.min_aln_size) {
+        Ok(records) => records,
+        Err(err) => {
+            error!("Failed to parse PAF file: {err}");
+            if let Some(source) = err.source() {
+                debug!("Root cause: {source}");
+            }
+            std::process::exit(1);
+        }
+    };
     debug!("Sorting records");
 
     info!("Building the dotplot");
