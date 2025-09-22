@@ -1,6 +1,6 @@
 use crate::{config::Config, parser::PafRecord};
 use ab_glyph::PxScale;
-use image::{Pixel, Rgba, RgbaImage};
+use image::{imageops::overlay, Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size
 };
@@ -450,15 +450,24 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_query_names(&mut self, query_coords: &HashMap<String, QueryCoord>) {
-        self.rotate_image(-std::f32::consts::FRAC_PI_2);
+        let width = self.plot.width();
+        let height = self.plot.height();
+        let transparent = Rgba([0, 0, 0, 0]);
+        let center = (width as f32 / 2.0, height as f32 / 2.0);
+
+        let base_overlay = RgbaImage::from_pixel(width, height, transparent);
+        let mut rotated_overlay = rotate(
+            &base_overlay,
+            center,
+            -std::f32::consts::FRAC_PI_2,
+            Interpolation::Bicubic,
+            transparent,
+        );
 
         let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
         let font = ab_glyph::FontVec::try_from_vec(font).unwrap();
         let height = 12.4;
-        let scale = PxScale {
-            x: height,
-            y: height,
-        };
+        let scale = PxScale { x: height, y: height };
 
         let mut offset = 5.0;
 
@@ -466,26 +475,47 @@ impl<'a> Dotplot<'a> {
         query_coords_sorted
             .sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
         for (query, QueryCoord { start, end }) in query_coords_sorted.iter() {
-            let middle_x = (end + start) / 2.0;
-            let text = Self::get_text(query, *end, *start, height); 
-            let text_size = text_size(scale, &font, &text);
-            if !text.is_empty() {
-                offset = -offset;
+            let middle_y = (end + start) / 2.0;
+            let text = Self::get_text(query, *end, *start, height);
+            if text.is_empty() {
+                continue;
             }
 
-            let word_start = (middle_x - (text_size.0 as f32 / 2.0)) as i32;
+            offset = -offset;
+
+            let text_size = text_size(scale, &font, &text);
+            let target_center_x = self.start_x - 10.0;
+            let target_center_y = middle_y + offset;
+
+            // Translate the desired label centre (after rotation) back into the
+            // unrotated coordinate space so the label lands next to the axis
+            // once we rotate the overlay by -90°.
+            let source_center_x = center.0 + center.1 - target_center_y;
+            let source_center_y = target_center_x - center.0 + center.1;
+
+            let draw_x = (source_center_x - text_size.0 as f32 / 2.0).round() as i32;
+            let draw_y = (source_center_y - text_size.1 as f32 / 2.0).round() as i32;
+
             draw_text_mut(
-                &mut self.plot,
+                &mut rotated_overlay,
                 Rgba([0, 0, 0, 255]),
-                word_start,
-                (self.end_y + 10.0 + offset) as i32,
+                draw_x,
+                draw_y,
                 scale,
                 &font,
                 &text,
             );
         }
 
-        self.rotate_image(std::f32::consts::FRAC_PI_2);
+        let query_label_overlay = rotate(
+            &rotated_overlay,
+            center,
+            -std::f32::consts::FRAC_PI_2,
+            Interpolation::Bicubic,
+            transparent,
+        );
+
+        overlay(&mut self.plot, &query_label_overlay, 0, 0);
     }
 
     fn get_text(query: &str, start: f32, end: f32, height: f32) -> String {
@@ -505,19 +535,6 @@ impl<'a> Dotplot<'a> {
         }
 
         text
-    }
-
-    fn rotate_image(&mut self, angle: f32) {
-        let center_x = self.config.width as f32 / 2.0;
-        let center_y = self.config.height as f32 / 2.0;
-
-        self.plot = rotate(
-            &self.plot,
-            (center_x, center_y),
-            angle,
-            Interpolation::Bicubic,
-            Rgba([0, 0, 0, 255]),
-        );
     }
 
     // Saves the plot to a file
