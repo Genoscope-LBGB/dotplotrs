@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, Theme};
 use clap::{command, value_parser, Arg};
 use fern::colors::{Color, ColoredLevelConfig};
 
@@ -74,7 +74,22 @@ pub fn parse_args() -> Config {
                 .value_parser(value_parser!(u32))
                 .help("Thickness of lines (doubled for best matching chromosomes)"),
         )
+        .arg(
+            Arg::new("theme")
+                .long("theme")
+                .required(false)
+                .value_parser(["light", "dark"])
+                .default_value("light")
+                .help("Color theme for the output image"),
+        )
         .get_matches();
+
+    let theme = args.get_one::<String>("theme").unwrap();
+    let theme = match theme.as_str() {
+        "light" => Theme::Light,
+        "dark" => Theme::Dark,
+        _ => unreachable!("validated by clap"),
+    };
 
     Config {
         paf: args.get_one::<String>("paf").unwrap().clone(),
@@ -86,6 +101,7 @@ pub fn parse_args() -> Config {
         output: args.get_one::<String>("output").unwrap().clone(),
         debug: args.get_flag("debug"),
         line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
+        theme,
     }
 }
 

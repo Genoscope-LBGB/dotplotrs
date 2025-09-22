@@ -27,6 +27,8 @@ pub struct Dotplot<'a> {
     start_y: f32,
     end_y: f32,
     plot: RgbaImage,
+    foreground_color: Rgba<u8>,
+    background_color: Rgba<u8>,
 }
 
 impl<'a> Dotplot<'a> {
@@ -40,6 +42,9 @@ impl<'a> Dotplot<'a> {
         let start_y = offset_y;
         let end_y = config.height as f32 - offset_y;
 
+        let foreground_color = Rgba(config.theme.foreground_color());
+        let background_color = Rgba(config.theme.background_color());
+
         let mut dotplot = Self {
             config,
             start_x,
@@ -47,6 +52,8 @@ impl<'a> Dotplot<'a> {
             start_y,
             end_y,
             plot,
+            foreground_color,
+            background_color,
         };
 
         dotplot.init_plot();
@@ -59,12 +66,12 @@ impl<'a> Dotplot<'a> {
         self.init_axes_lines();
     }
 
-    // Initializes the background to white
+    // Initializes the background with the selected theme color
     fn init_background(&mut self) {
         draw_filled_rect_mut(
             &mut self.plot,
             Rect::at(0, 0).of_size(self.config.width, self.config.height),
-            Rgba([255, 255, 255, 255]),
+            self.background_color,
         );
     }
 
@@ -76,7 +83,7 @@ impl<'a> Dotplot<'a> {
                 (self.end_x - self.start_x) as u32,
                 (self.end_y - self.start_y) as u32,
             ),
-            Rgba([0, 0, 0, 255]),
+            self.foreground_color,
         );
     }
 
@@ -173,13 +180,12 @@ impl<'a> Dotplot<'a> {
             (qstart_px, qend_px)
         };
 
-        self.config.line_thickness;
-
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
         let dy = qend_px - qstart_px;
         let line_length_sq = dx * dx + dy * dy;
 
+        let thickness = self.config.line_thickness;
         if line_length_sq <= f32::EPSILON {
             self.draw_alignment_point(tstart_px, qstart_px, thickness.max(1));
             return;
@@ -208,7 +214,7 @@ impl<'a> Dotplot<'a> {
                 &mut self.plot,
                 ((tstart_px + offset_x) as i32, (qstart_px + offset_y) as i32),
                 ((tend_px + offset_x) as i32, (qend_px + offset_y) as i32),
-                Rgba([0, 0, 0, 255]),
+                self.foreground_color,
                 Self::interpolate,
             );
         }
@@ -235,7 +241,7 @@ impl<'a> Dotplot<'a> {
                 let py = center_y + dy;
                 if px >= 0 && px < width && py >= 0 && py < height {
                     let (px_u32, py_u32) = (px as u32, py as u32);
-                    self.plot.put_pixel(px_u32, py_u32, Rgba([0, 0, 0, 255]));
+                    self.plot.put_pixel(px_u32, py_u32, self.foreground_color);
                 }
             }
         }
@@ -409,7 +415,7 @@ impl<'a> Dotplot<'a> {
                     &mut self.plot,
                     (*start, self.end_y),
                     (*start, self.end_y + 10.0),
-                    Rgba([0, 0, 0, 255]),
+                    self.foreground_color,
                 );
 
                 let grid_line_size = self.config.height as f32 * 0.0025;
@@ -419,7 +425,7 @@ impl<'a> Dotplot<'a> {
                         &mut self.plot,
                         (*start, y),
                         (*start, y + grid_line_size),
-                        Rgba([0, 0, 0, 255]),
+                        self.foreground_color,
                     );
                     y += 2.0 * grid_line_size;
                 }
@@ -434,7 +440,7 @@ impl<'a> Dotplot<'a> {
                     &mut self.plot,
                     (self.start_x, *start),
                     (self.start_x - 10.0, *start),
-                    Rgba([0, 0, 0, 255]),
+                    self.foreground_color,
                 );
 
                 let grid_line_size = self.config.width as f32 * 0.0025;
@@ -444,7 +450,7 @@ impl<'a> Dotplot<'a> {
                         &mut self.plot,
                         (x, *start),
                         (x + grid_line_size, *start),
-                        Rgba([0, 0, 0, 255]),
+                        self.foreground_color,
                     );
                     x += 2.0 * grid_line_size;
                 }
@@ -475,7 +481,7 @@ impl<'a> Dotplot<'a> {
             let word_start = (middle_x - (text_size.0 as f32 / 2.0)) as i32;
             draw_text_mut(
                 &mut self.plot,
-                Rgba([0, 0, 0, 255]),
+                self.foreground_color,
                 word_start,
                 (self.end_y + 10.0 + offset) as i32,
                 scale,
@@ -536,7 +542,7 @@ impl<'a> Dotplot<'a> {
 
             draw_text_mut(
                 &mut rotated_overlay,
-                Rgba([0, 0, 0, 255]),
+                self.foreground_color,
                 draw_x,
                 draw_y,
                 scale,
