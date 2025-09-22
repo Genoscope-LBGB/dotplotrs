@@ -80,8 +80,8 @@ pub fn parse_paf(
 
         let record = PafRecord::from_paf_line(line_number + 1, &raw_line)?;
 
-        let aln_size = record.tend as i64 - record.tstart as i64;
-        if i64::abs(aln_size) >= min_aln_size as i64 {
+        let aln_size = record.tend.abs_diff(record.tstart);
+        if aln_size >= min_aln_size {
             match records_hash.get_mut(&record.tname) {
                 Some(records) => records.push(record),
                 None => {
