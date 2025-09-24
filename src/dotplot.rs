@@ -1,5 +1,5 @@
 use crate::{config::Config, parser::PafRecord};
-use ab_glyph::PxScale;
+use ab_glyph::{FontVec, PxScale};
 use image::{imageops::overlay, Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
     draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut,
@@ -8,6 +8,7 @@ use imageproc::drawing::{
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
 use num_traits::NumCast;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 pub struct TargetCoord {
@@ -15,10 +16,36 @@ pub struct TargetCoord {
     pub end: f32,
 }
 
+impl TargetCoord {
+    fn map_position(&self, position: u64, total_length: u64) -> f32 {
+        map_range(
+            position as f32,
+            0.0,
+            total_length as f32,
+            self.start,
+            self.end,
+        )
+    }
+}
+
 pub struct QueryCoord {
     pub start: f32,
     pub end: f32,
 }
+
+impl QueryCoord {
+    fn map_position(&self, position: u64, total_length: u64) -> f32 {
+        map_range(
+            position as f32,
+            0.0,
+            total_length as f32,
+            self.start,
+            self.end,
+        )
+    }
+}
+
+const LABEL_TEXT_HEIGHT: f32 = 12.4;
 
 pub struct Dotplot<'a> {
     config: &'a Config,
@@ -29,6 +56,8 @@ pub struct Dotplot<'a> {
     plot: RgbaImage,
     foreground_color: Rgba<u8>,
     background_color: Rgba<u8>,
+    font: FontVec,
+    text_scale: PxScale,
 }
 
 impl<'a> Dotplot<'a> {
@@ -44,6 +73,11 @@ impl<'a> Dotplot<'a> {
 
         let foreground_color = Rgba(config.theme.foreground_color());
         let background_color = Rgba(config.theme.background_color());
+        let font = Self::load_font();
+        let text_scale = PxScale {
+            x: LABEL_TEXT_HEIGHT,
+            y: LABEL_TEXT_HEIGHT,
+        };
 
         let mut dotplot = Self {
             config,
@@ -54,10 +88,17 @@ impl<'a> Dotplot<'a> {
             plot,
             foreground_color,
             background_color,
+            font,
+            text_scale,
         };
 
         dotplot.init_plot();
         dotplot
+    }
+
+    fn load_font() -> FontVec {
+        let bytes = include_bytes!("../FiraCode-Regular.ttf");
+        FontVec::try_from_vec(bytes.to_vec()).expect("failed to load built-in font")
     }
 
     // Initializes the dotplot with a blank background and empty axes
@@ -127,58 +168,24 @@ impl<'a> Dotplot<'a> {
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
     ) {
-        let tcoords = target_coords.get(&record.tname).unwrap();
-        let tstart_px = map_range(
-            record.tstart as f32,
-            0.0,
-            record.tlen as f32,
-            tcoords.start,
-            tcoords.end,
-        );
-        let tend_px = map_range(
-            record.tend as f32,
-            0.0,
-            record.tlen as f32,
-            tcoords.start,
-            tcoords.end,
-        );
-
-        let qcoords = query_coords.get(&record.qname).unwrap();
-        let (qstart_px, qend_px) = if record.strand == '-' {
-            // For reverse strand, flip the query coordinates
-            let qend_px = map_range(
-                record.qstart as f32,
-                0.0,
-                record.qlen as f32,
-                qcoords.start,
-                qcoords.end,
+        let Some(tcoords) = target_coords.get(&record.tname) else {
+            log::warn!(
+                "Missing target coordinates for '{}'; skipping alignment",
+                record.tname
             );
-            let qstart_px = map_range(
-                record.qend as f32,
-                0.0,
-                record.qlen as f32,
-                qcoords.start,
-                qcoords.end,
-            );
-            (qstart_px, qend_px)
-        } else {
-            // For forward strand, use coordinates as-is
-            let qstart_px = map_range(
-                record.qstart as f32,
-                0.0,
-                record.qlen as f32,
-                qcoords.start,
-                qcoords.end,
-            );
-            let qend_px = map_range(
-                record.qend as f32,
-                0.0,
-                record.qlen as f32,
-                qcoords.start,
-                qcoords.end,
-            );
-            (qstart_px, qend_px)
+            return;
         };
+        let tstart_px = tcoords.map_position(record.tstart, record.tlen);
+        let tend_px = tcoords.map_position(record.tend, record.tlen);
+
+        let Some(qcoords) = query_coords.get(&record.qname) else {
+            log::warn!(
+                "Missing query coordinates for '{}'; skipping alignment",
+                record.qname
+            );
+            return;
+        };
+        let (qstart_px, qend_px) = Self::query_pixel_range(record, qcoords);
 
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
@@ -217,6 +224,19 @@ impl<'a> Dotplot<'a> {
                 self.foreground_color,
                 Self::interpolate,
             );
+        }
+    }
+
+    fn query_pixel_range(record: &PafRecord, coords: &QueryCoord) -> (f32, f32) {
+        match record.strand {
+            '-' => (
+                coords.map_position(record.qend, record.qlen),
+                coords.map_position(record.qstart, record.qlen),
+            ),
+            _ => (
+                coords.map_position(record.qstart, record.qlen),
+                coords.map_position(record.qend, record.qlen),
+            ),
         }
     }
 
@@ -339,9 +359,9 @@ impl<'a> Dotplot<'a> {
         let mut targets_sizes: HashMap<String, u64> = HashMap::new();
 
         for (tname, records) in records_vec.iter() {
-            targets_sizes
-                .entry(tname.clone())
-                .or_insert(records[0].tlen);
+            if let Some(record) = records.first() {
+                targets_sizes.entry(tname.clone()).or_insert(record.tlen);
+            }
         }
 
         let mut targets_sizes_vec = Vec::from_iter(targets_sizes);
@@ -409,7 +429,9 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_target_ticks(&mut self, coords: &HashMap<String, TargetCoord>) {
-        for (_, TargetCoord { start, end: _ }) in coords.iter() {
+        for (_, TargetCoord { start, end: _ }) in
+            Self::sorted_coordinates(coords, |coord| coord.start)
+        {
             if *start > self.start_x {
                 draw_line_segment_mut(
                     &mut self.plot,
@@ -434,7 +456,9 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_query_ticks(&mut self, coords: &HashMap<String, QueryCoord>) {
-        for (_, QueryCoord { start, end: _ }) in coords.iter() {
+        for (_, QueryCoord { start, end: _ }) in
+            Self::sorted_coordinates(coords, |coord| coord.start)
+        {
             if *start < self.end_y {
                 draw_line_segment_mut(
                     &mut self.plot,
@@ -459,22 +483,16 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_target_names(&mut self, target_coords: &HashMap<String, TargetCoord>) {
-        let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
-        let font = ab_glyph::FontVec::try_from_vec(font).unwrap();
-        let height = 12.4;
-        let scale = PxScale {
-            x: height,
-            y: height,
-        };
-
         let mut offset = 5.0;
-        let mut target_coords_sorted = Vec::from_iter(target_coords);
-        target_coords_sorted.sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
+        let scale = self.text_scale;
+        let height = scale.y;
 
-        for (target, TargetCoord { start, end }) in target_coords_sorted.iter() {
+        for (target, TargetCoord { start, end }) in
+            Self::sorted_coordinates(target_coords, |coord| coord.start)
+        {
             let middle_x = (end + start) / 2.0;
             let text = Self::get_text(target, *start, *end, height);
-            let text_size = text_size(scale, &font, &text);
+            let text_size = text_size(scale, &self.font, &text);
 
             offset = -offset;
 
@@ -485,7 +503,7 @@ impl<'a> Dotplot<'a> {
                 word_start,
                 (self.end_y + 10.0 + offset) as i32,
                 scale,
-                &font,
+                &self.font,
                 &text,
             );
         }
@@ -506,19 +524,14 @@ impl<'a> Dotplot<'a> {
             transparent,
         );
 
-        let font = Vec::from(include_bytes!("../FiraCode-Regular.ttf") as &[u8]);
-        let font = ab_glyph::FontVec::try_from_vec(font).unwrap();
-        let height = 12.4;
-        let scale = PxScale {
-            x: height,
-            y: height,
-        };
+        let scale = self.text_scale;
+        let height = scale.y;
 
         let mut offset = 5.0;
 
-        let mut query_coords_sorted = Vec::from_iter(query_coords);
-        query_coords_sorted.sort_by(|a, b| (a.1.start).partial_cmp(&(b.1.start)).unwrap());
-        for (query, QueryCoord { start, end }) in query_coords_sorted.iter() {
+        for (query, QueryCoord { start, end }) in
+            Self::sorted_coordinates(query_coords, |coord| coord.start)
+        {
             let middle_y = (end + start) / 2.0;
             let text = Self::get_text(query, *end, *start, height);
             if text.is_empty() {
@@ -527,7 +540,7 @@ impl<'a> Dotplot<'a> {
 
             offset = -offset;
 
-            let text_size = text_size(scale, &font, &text);
+            let text_size = text_size(scale, &self.font, &text);
             let target_center_x = self.start_x - 10.0;
             let target_center_y = middle_y + offset;
 
@@ -546,7 +559,7 @@ impl<'a> Dotplot<'a> {
                 draw_x,
                 draw_y,
                 scale,
-                &font,
+                &self.font,
                 &text,
             );
         }
@@ -560,6 +573,26 @@ impl<'a> Dotplot<'a> {
         );
 
         overlay(&mut self.plot, &query_label_overlay, 0, 0);
+    }
+
+    fn sorted_coordinates<'a, T, F>(
+        coords: &'a HashMap<String, T>,
+        key_fn: F,
+    ) -> Vec<(&'a String, &'a T)>
+    where
+        F: Fn(&T) -> f32,
+    {
+        let mut entries: Vec<_> = coords.iter().collect();
+        entries.sort_by(|a, b| {
+            let left = key_fn(a.1);
+            let right = key_fn(b.1);
+            match left.partial_cmp(&right) {
+                Some(Ordering::Equal) => a.0.cmp(b.0),
+                Some(order) => order,
+                None => a.0.cmp(b.0),
+            }
+        });
+        entries
     }
 
     fn get_text(query: &str, start: f32, end: f32, height: f32) -> String {
