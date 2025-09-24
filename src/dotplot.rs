@@ -1,4 +1,7 @@
-use crate::{config::Config, parser::PafRecord};
+use crate::{
+    config::{Config, Theme},
+    parser::PafRecord,
+};
 use ab_glyph::{FontVec, PxScale};
 use image::{imageops::overlay, Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
@@ -26,8 +29,11 @@ const TARGET_COLOR_PALETTE: &[[u8; 4]] = &[
     [68, 170, 153, 255],  // teal
 ];
 
-fn non_significant_color() -> Rgba<u8> {
-    Rgba([180, 180, 180, 255])
+fn non_significant_color(theme: Theme) -> Rgba<u8> {
+    match theme {
+        Theme::Light => Rgba([190, 190, 190, 255]),
+        Theme::Dark => Rgba([80, 80, 90, 255]),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -127,10 +133,16 @@ impl SyntenyAnalysis {
             .and_then(|inner| inner.get(query))
     }
 
-    fn color_for(&self, target: &str, query: &str, chromosome_color: Rgba<u8>) -> Rgba<u8> {
+    fn color_for(
+        &self,
+        target: &str,
+        query: &str,
+        chromosome_color: Rgba<u8>,
+        non_significant: Rgba<u8>,
+    ) -> Rgba<u8> {
         match self.summary_for(target, query) {
             Some(summary) if summary.is_significant() => chromosome_color,
-            _ => non_significant_color(),
+            _ => non_significant,
         }
     }
 }
@@ -325,6 +337,7 @@ impl<'a> Dotplot<'a> {
             return;
         }
         let target_colors = self.target_color_map(&target_coords);
+        let non_significant = non_significant_color(self.config.theme);
         self.draw_target_ticks(&target_coords);
 
         let query_coords = self.queries_to_coords(&mut records);
@@ -340,13 +353,19 @@ impl<'a> Dotplot<'a> {
             &query_coords,
             &analysis,
             &target_colors,
+            non_significant,
         );
 
         self.draw_target_names(&target_coords);
         self.draw_query_names(&query_coords);
 
-        self.bubble_plot =
-            self.build_bubble_grid(&analysis, &target_coords, &query_coords, &target_colors);
+        self.bubble_plot = self.build_bubble_grid(
+            &analysis,
+            &target_coords,
+            &query_coords,
+            &target_colors,
+            non_significant,
+        );
     }
 
     fn draw_alignments(
@@ -356,10 +375,18 @@ impl<'a> Dotplot<'a> {
         query_coords: &HashMap<String, QueryCoord>,
         analysis: &SyntenyAnalysis,
         target_colors: &HashMap<String, Rgba<u8>>,
+        non_significant: Rgba<u8>,
     ) {
         for (_, records) in records_vec.iter() {
             for record in records.iter() {
-                self.draw_alignment(record, target_coords, query_coords, analysis, target_colors);
+                self.draw_alignment(
+                    record,
+                    target_coords,
+                    query_coords,
+                    analysis,
+                    target_colors,
+                    non_significant,
+                );
             }
         }
     }
@@ -371,6 +398,7 @@ impl<'a> Dotplot<'a> {
         query_coords: &HashMap<String, QueryCoord>,
         analysis: &SyntenyAnalysis,
         target_colors: &HashMap<String, Rgba<u8>>,
+        non_significant: Rgba<u8>,
     ) {
         let Some(tcoords) = target_coords.get(&record.tname) else {
             log::warn!(
@@ -395,7 +423,12 @@ impl<'a> Dotplot<'a> {
             .get(&record.tname)
             .copied()
             .unwrap_or(self.foreground_color);
-        let color = analysis.color_for(&record.tname, &record.qname, chromosome_color);
+        let color = analysis.color_for(
+            &record.tname,
+            &record.qname,
+            chromosome_color,
+            non_significant,
+        );
 
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
@@ -786,6 +819,7 @@ impl<'a> Dotplot<'a> {
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
         target_colors: &HashMap<String, Rgba<u8>>,
+        non_significant: Rgba<u8>,
     ) -> Option<RgbaImage> {
         if analysis.total_anchors == 0
             || analysis.num_tests == 0
@@ -891,7 +925,8 @@ impl<'a> Dotplot<'a> {
                         .get(target)
                         .copied()
                         .unwrap_or(self.foreground_color);
-                    let color = analysis.color_for(target, query, chromosome_color);
+                    let color =
+                        analysis.color_for(target, query, chromosome_color, non_significant);
                     draw_filled_circle_mut(
                         &mut bubble_plot,
                         (center_x.round() as i32, center_y.round() as i32),
@@ -998,7 +1033,7 @@ impl<'a> Dotplot<'a> {
 
         let rect = Rect::at(legend_x.round() as i32, legend_y.round() as i32)
             .of_size(swatch_size.round() as u32, swatch_size.round() as u32);
-        draw_filled_rect_mut(&mut bubble_plot, rect, non_significant_color());
+        draw_filled_rect_mut(&mut bubble_plot, rect, non_significant);
         let text_x = legend_x + swatch_size + cell_size * 0.2;
         draw_text_mut(
             &mut bubble_plot,
