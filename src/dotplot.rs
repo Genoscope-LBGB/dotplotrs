@@ -1,4 +1,5 @@
 use crate::{
+    bubble_plot::{bubble_output_path, BubblePlotBuilder},
     config::{Config, Theme},
     parser::PafRecord,
 };
@@ -13,7 +14,6 @@ use imageproc::rect::Rect;
 use num_traits::NumCast;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
 const SIGNIFICANCE_THRESHOLD: f64 = 0.01;
 const SHORT_ALIGNMENT_PIXEL_LENGTH: f32 = 3.0;
@@ -37,19 +37,23 @@ fn non_significant_color(theme: Theme) -> Rgba<u8> {
 }
 
 #[derive(Debug, Clone)]
-struct PairSummary {
+pub(crate) struct PairSummary {
     anchors: u64,
     corrected_p_value: f64,
 }
 
 impl PairSummary {
-    fn is_significant(&self) -> bool {
+    pub(crate) fn is_significant(&self) -> bool {
         self.corrected_p_value < SIGNIFICANCE_THRESHOLD
+    }
+
+    pub(crate) fn anchor_count(&self) -> u64 {
+        self.anchors
     }
 }
 
 #[derive(Debug, Clone)]
-struct SyntenyAnalysis {
+pub(crate) struct SyntenyAnalysis {
     pair_summaries: HashMap<String, HashMap<String, PairSummary>>,
     total_anchors: u64,
     num_tests: usize,
@@ -127,13 +131,28 @@ impl SyntenyAnalysis {
         }
     }
 
-    fn summary_for(&self, target: &str, query: &str) -> Option<&PairSummary> {
+    pub(crate) fn has_data(&self) -> bool {
+        self.total_anchors > 0 && self.num_tests > 0
+    }
+
+    pub(crate) fn max_significant_anchor_count(&self) -> u64 {
+        self.pair_summaries
+            .values()
+            .flat_map(|inner| inner.values())
+            .filter(|summary| summary.is_significant())
+            .map(|summary| summary.anchor_count())
+            .max()
+            .unwrap_or(0)
+            .max(1)
+    }
+
+    pub(crate) fn summary_for(&self, target: &str, query: &str) -> Option<&PairSummary> {
         self.pair_summaries
             .get(target)
             .and_then(|inner| inner.get(query))
     }
 
-    fn color_for(
+    pub(crate) fn color_for(
         &self,
         target: &str,
         query: &str,
@@ -359,10 +378,27 @@ impl<'a> Dotplot<'a> {
         self.draw_target_names(&target_coords);
         self.draw_query_names(&query_coords);
 
-        self.bubble_plot = self.build_bubble_grid(
+        let target_order: Vec<String> =
+            Self::sorted_coordinates(&target_coords, |coord| coord.start)
+                .into_iter()
+                .map(|(name, _)| name.clone())
+                .collect();
+        let query_order: Vec<String> = Self::sorted_coordinates(&query_coords, |coord| coord.start)
+            .into_iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        let bubble_builder = BubblePlotBuilder::new(
+            self.config.width,
+            self.foreground_color,
+            self.background_color,
+            &self.font,
+        );
+
+        self.bubble_plot = bubble_builder.build(
             &analysis,
-            &target_coords,
-            &query_coords,
+            &target_order,
+            &query_order,
             &target_colors,
             non_significant,
         );
@@ -813,241 +849,6 @@ impl<'a> Dotplot<'a> {
         overlay(&mut self.plot, &query_label_overlay, 0, 0);
     }
 
-    fn build_bubble_grid(
-        &self,
-        analysis: &SyntenyAnalysis,
-        target_coords: &HashMap<String, TargetCoord>,
-        query_coords: &HashMap<String, QueryCoord>,
-        target_colors: &HashMap<String, Rgba<u8>>,
-        non_significant: Rgba<u8>,
-    ) -> Option<RgbaImage> {
-        if analysis.total_anchors == 0
-            || analysis.num_tests == 0
-            || target_coords.is_empty()
-            || query_coords.is_empty()
-        {
-            return None;
-        }
-
-        let target_order: Vec<String> =
-            Self::sorted_coordinates(target_coords, |coord| coord.start)
-                .into_iter()
-                .map(|(name, _)| name.clone())
-                .collect();
-        let query_order: Vec<String> = Self::sorted_coordinates(query_coords, |coord| coord.start)
-            .into_iter()
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        if target_order.is_empty() || query_order.is_empty() {
-            return None;
-        }
-
-        let max_cells = usize::max(target_order.len(), query_order.len()).max(1) as f32;
-        let mut cell_size = (self.config.width as f32 / (max_cells + 5.0)).clamp(40.0, 140.0);
-        if cell_size.is_nan() || cell_size <= 0.0 {
-            cell_size = 60.0;
-        }
-        let left_margin = cell_size * 2.4;
-        let top_margin = cell_size * 2.0;
-        let legend_entries = target_order.len() + 1; // include non-significant entry
-        let legend_height = (legend_entries as f32 + 1.5) * (cell_size * 0.6);
-
-        let grid_width = (target_order.len() as f32) * cell_size;
-        let grid_height = (query_order.len() as f32) * cell_size;
-
-        let image_width = (left_margin + grid_width + cell_size * 2.0).ceil() as u32;
-        let image_height = (top_margin + grid_height + legend_height + cell_size).ceil() as u32;
-
-        let mut bubble_plot =
-            RgbaImage::from_pixel(image_width, image_height, self.background_color);
-
-        let grid_left = left_margin;
-        let grid_top = top_margin;
-        let grid_right = grid_left + grid_width;
-        let grid_bottom = grid_top + grid_height;
-
-        draw_hollow_rect_mut(
-            &mut bubble_plot,
-            Rect::at(grid_left.round() as i32, grid_top.round() as i32)
-                .of_size(grid_width.round() as u32, grid_height.round() as u32),
-            self.foreground_color,
-        );
-
-        for (col_idx, _) in target_order.iter().enumerate() {
-            let x = grid_left + (col_idx as f32) * cell_size;
-            draw_line_segment_mut(
-                &mut bubble_plot,
-                (x, grid_top),
-                (x, grid_bottom),
-                self.foreground_color,
-            );
-        }
-
-        for (row_idx, _) in query_order.iter().enumerate() {
-            let y = grid_top + (row_idx as f32) * cell_size;
-            draw_line_segment_mut(
-                &mut bubble_plot,
-                (grid_left, y),
-                (grid_right, y),
-                self.foreground_color,
-            );
-        }
-
-        let max_anchor = analysis
-            .pair_summaries
-            .values()
-            .flat_map(|inner| inner.values())
-            .filter(|summary| summary.is_significant())
-            .map(|summary| summary.anchors)
-            .max()
-            .unwrap_or(0)
-            .max(1);
-        let max_radius = (cell_size * 0.45).max(5.0);
-        let bubble_text_scale = PxScale {
-            x: (cell_size * 0.35).clamp(12.0, 28.0),
-            y: (cell_size * 0.35).clamp(12.0, 28.0),
-        };
-
-        for (col_idx, target) in target_order.iter().enumerate() {
-            for (row_idx, query) in query_order.iter().enumerate() {
-                let Some(summary) = analysis.summary_for(target, query) else {
-                    continue;
-                };
-
-                let center_x = grid_left + (col_idx as f32 + 0.5) * cell_size;
-                let center_y = grid_top + (row_idx as f32 + 0.5) * cell_size;
-
-                if summary.is_significant() && summary.anchors > 0 {
-                    let radius_ratio = (summary.anchors as f32 / max_anchor as f32).sqrt();
-                    let radius = (radius_ratio * max_radius).max(3.0);
-                    let chromosome_color = target_colors
-                        .get(target)
-                        .copied()
-                        .unwrap_or(self.foreground_color);
-                    let color =
-                        analysis.color_for(target, query, chromosome_color, non_significant);
-                    draw_filled_circle_mut(
-                        &mut bubble_plot,
-                        (center_x.round() as i32, center_y.round() as i32),
-                        radius.round() as i32,
-                        color,
-                    );
-                } else {
-                    let text = "n.s.";
-                    let (text_w, text_h) = text_size(bubble_text_scale, &self.font, text);
-                    let draw_x = (center_x - text_w as f32 / 2.0).round() as i32;
-                    let draw_y = (center_y - text_h as f32 / 2.0).round() as i32;
-                    draw_text_mut(
-                        &mut bubble_plot,
-                        self.foreground_color,
-                        draw_x,
-                        draw_y,
-                        bubble_text_scale,
-                        &self.font,
-                        text,
-                    );
-                }
-            }
-        }
-
-        let label_scale = PxScale {
-            x: (cell_size * 0.35).clamp(12.0, 26.0),
-            y: (cell_size * 0.35).clamp(12.0, 26.0),
-        };
-
-        for (col_idx, target) in target_order.iter().enumerate() {
-            let center_x = grid_left + (col_idx as f32 + 0.5) * cell_size;
-            let text = target.as_str();
-            let (text_w, _text_h) = text_size(label_scale, &self.font, text);
-            let draw_x = (center_x - text_w as f32 / 2.0).round() as i32;
-            let draw_y = (grid_bottom + cell_size * 0.2) as i32;
-            draw_text_mut(
-                &mut bubble_plot,
-                self.foreground_color,
-                draw_x,
-                draw_y,
-                label_scale,
-                &self.font,
-                text,
-            );
-        }
-
-        for (row_idx, query) in query_order.iter().enumerate() {
-            let center_y = grid_top + (row_idx as f32 + 0.5) * cell_size;
-            let text = query.as_str();
-            let (text_w, text_h) = text_size(label_scale, &self.font, text);
-            let draw_x = (grid_left - cell_size * 0.3 - text_w as f32).round() as i32;
-            let draw_y = (center_y - text_h as f32 / 2.0).round() as i32;
-            draw_text_mut(
-                &mut bubble_plot,
-                self.foreground_color,
-                draw_x,
-                draw_y,
-                label_scale,
-                &self.font,
-                text,
-            );
-        }
-
-        let legend_x = grid_left;
-        let mut legend_y = grid_bottom + cell_size * 0.7;
-        let swatch_size = (cell_size * 0.4).clamp(12.0, 24.0);
-        let legend_scale = PxScale {
-            x: (cell_size * 0.32).clamp(11.0, 24.0),
-            y: (cell_size * 0.32).clamp(11.0, 24.0),
-        };
-
-        draw_text_mut(
-            &mut bubble_plot,
-            self.foreground_color,
-            legend_x.round() as i32,
-            (legend_y - cell_size * 0.4) as i32,
-            legend_scale,
-            &self.font,
-            "Chromosome colors (x-axis order)",
-        );
-
-        for target in target_order.iter() {
-            let rect = Rect::at(legend_x.round() as i32, legend_y.round() as i32)
-                .of_size(swatch_size.round() as u32, swatch_size.round() as u32);
-            let color = target_colors
-                .get(target)
-                .copied()
-                .unwrap_or(self.foreground_color);
-            draw_filled_rect_mut(&mut bubble_plot, rect, color);
-
-            let text_x = legend_x + swatch_size + cell_size * 0.2;
-            draw_text_mut(
-                &mut bubble_plot,
-                self.foreground_color,
-                text_x.round() as i32,
-                legend_y.round() as i32,
-                legend_scale,
-                &self.font,
-                target,
-            );
-
-            legend_y += swatch_size + cell_size * 0.2;
-        }
-
-        let rect = Rect::at(legend_x.round() as i32, legend_y.round() as i32)
-            .of_size(swatch_size.round() as u32, swatch_size.round() as u32);
-        draw_filled_rect_mut(&mut bubble_plot, rect, non_significant);
-        let text_x = legend_x + swatch_size + cell_size * 0.2;
-        draw_text_mut(
-            &mut bubble_plot,
-            self.foreground_color,
-            text_x.round() as i32,
-            legend_y.round() as i32,
-            legend_scale,
-            &self.font,
-            "non-significant",
-        );
-
-        Some(bubble_plot)
-    }
-
     fn sorted_coordinates<T, F>(coords: &HashMap<String, T>, mut key_fn: F) -> Vec<(&String, &T)>
     where
         F: FnMut(&T) -> f32,
@@ -1095,26 +896,6 @@ impl<'a> Dotplot<'a> {
         }
     }
 }
-
-fn bubble_output_path(output: &str) -> PathBuf {
-    let path = Path::new(output);
-    let stem = path
-        .file_stem()
-        .map(|s| s.to_string_lossy())
-        .unwrap_or_else(|| "dotplot".into());
-
-    let mut filename = format!("{}_bubble", stem);
-    if let Some(extension) = path.extension() {
-        filename.push('.');
-        filename.push_str(&extension.to_string_lossy());
-    }
-
-    match path.parent() {
-        Some(parent) if parent != Path::new("") => parent.join(filename),
-        _ => PathBuf::from(filename),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

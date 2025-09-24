@@ -1,3 +1,4 @@
+mod bubble_plot;
 #[warn(clippy::all, clippy::pedantic)]
 mod cli;
 mod config;
