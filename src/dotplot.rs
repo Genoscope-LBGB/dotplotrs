@@ -378,15 +378,33 @@ impl<'a> Dotplot<'a> {
         self.draw_target_names(&target_coords);
         self.draw_query_names(&query_coords);
 
-        let target_order: Vec<String> =
+        let target_sizes: HashMap<String, u64> =
+            self.get_target_sizes_in_bp(&records).into_iter().collect();
+        let query_sizes = self.get_query_sizes_in_bp(&records);
+
+        let min_bubble_size = self.config.bubble_min_sequence_size;
+
+        let mut target_order: Vec<String> =
             Self::sorted_coordinates(&target_coords, |coord| coord.start)
                 .into_iter()
                 .map(|(name, _)| name.clone())
                 .collect();
-        let query_order: Vec<String> = Self::sorted_coordinates(&query_coords, |coord| coord.start)
-            .into_iter()
-            .map(|(name, _)| name.clone())
-            .collect();
+        let mut query_order: Vec<String> =
+            Self::sorted_coordinates(&query_coords, |coord| coord.start)
+                .into_iter()
+                .map(|(name, _)| name.clone())
+                .collect();
+
+        if min_bubble_size > 0 {
+            target_order = target_order
+                .into_iter()
+                .filter(|name| target_sizes.get(name).copied().unwrap_or(0) >= min_bubble_size)
+                .collect();
+            query_order = query_order
+                .into_iter()
+                .filter(|name| query_sizes.get(name).copied().unwrap_or(0) >= min_bubble_size)
+                .collect();
+        }
 
         let bubble_builder = BubblePlotBuilder::new(
             self.config.width,

@@ -75,6 +75,14 @@ pub fn parse_args() -> Config {
                 .help("Thickness of lines (doubled for best matching chromosomes)"),
         )
         .arg(
+            Arg::new("bubbleminsize")
+                .long("bubble-min-size")
+                .required(false)
+                .default_value("0")
+                .value_parser(value_parser!(u64))
+                .help("Minimum sequence length (bp) to include in the bubble plot"),
+        )
+        .arg(
             Arg::new("theme")
                 .long("theme")
                 .required(false)
@@ -102,6 +110,7 @@ pub fn parse_args() -> Config {
         debug: args.get_flag("debug"),
         line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
         theme,
+        bubble_min_sequence_size: args.get_one::<u64>("bubbleminsize").unwrap().to_owned(),
     }
 }
 
