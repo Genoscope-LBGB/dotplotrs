@@ -14,39 +14,15 @@ use std::path::{Path, PathBuf};
 
 const SIGNIFICANCE_THRESHOLD: f64 = 0.01;
 
-#[derive(Clone, Copy)]
-struct SignificanceBin {
-    upper_bound: f64,
-    color: [u8; 4],
-    label: &'static str,
-}
-
-const SIGNIFICANCE_BINS: [SignificanceBin; 5] = [
-    SignificanceBin {
-        upper_bound: 1e-25,
-        color: [45, 0, 75, 255],
-        label: "≤ 1e-25",
-    },
-    SignificanceBin {
-        upper_bound: 1e-20,
-        color: [84, 26, 139, 255],
-        label: "≤ 1e-20",
-    },
-    SignificanceBin {
-        upper_bound: 1e-15,
-        color: [115, 52, 180, 255],
-        label: "≤ 1e-15",
-    },
-    SignificanceBin {
-        upper_bound: 1e-10,
-        color: [170, 85, 203, 255],
-        label: "≤ 1e-10",
-    },
-    SignificanceBin {
-        upper_bound: SIGNIFICANCE_THRESHOLD,
-        color: [224, 140, 222, 255],
-        label: "< 0.01",
-    },
+const TARGET_COLOR_PALETTE: &[[u8; 4]] = &[
+    [68, 119, 170, 255],  // Tol Bright blue
+    [102, 204, 238, 255], // bright cyan
+    [34, 136, 51, 255],   // bright green
+    [204, 187, 68, 255],  // warm yellow
+    [238, 102, 119, 255], // coral red
+    [170, 51, 119, 255],  // magenta
+    [170, 119, 68, 255],  // warm brown
+    [68, 170, 153, 255],  // teal
 ];
 
 fn non_significant_color() -> Rgba<u8> {
@@ -62,18 +38,6 @@ struct PairSummary {
 impl PairSummary {
     fn is_significant(&self) -> bool {
         self.corrected_p_value < SIGNIFICANCE_THRESHOLD
-    }
-
-    fn color(&self) -> Rgba<u8> {
-        if !self.is_significant() {
-            return non_significant_color();
-        }
-
-        let bin = SIGNIFICANCE_BINS
-            .iter()
-            .find(|bin| self.corrected_p_value <= bin.upper_bound)
-            .unwrap_or_else(|| SIGNIFICANCE_BINS.last().unwrap());
-        Rgba(bin.color)
     }
 }
 
@@ -162,10 +126,11 @@ impl SyntenyAnalysis {
             .and_then(|inner| inner.get(query))
     }
 
-    fn color_for(&self, target: &str, query: &str) -> Rgba<u8> {
-        self.summary_for(target, query)
-            .map(PairSummary::color)
-            .unwrap_or_else(non_significant_color)
+    fn color_for(&self, target: &str, query: &str, chromosome_color: Rgba<u8>) -> Rgba<u8> {
+        match self.summary_for(target, query) {
+            Some(summary) if summary.is_significant() => chromosome_color,
+            _ => non_significant_color(),
+        }
     }
 }
 
@@ -304,6 +269,21 @@ impl<'a> Dotplot<'a> {
         dotplot
     }
 
+    fn target_color_map(
+        &self,
+        target_coords: &HashMap<String, TargetCoord>,
+    ) -> HashMap<String, Rgba<u8>> {
+        let mut mapping = HashMap::new();
+        let ordered_targets = Self::sorted_coordinates(target_coords, |coord| coord.start);
+
+        for (index, (name, _)) in ordered_targets.into_iter().enumerate() {
+            let palette_index = index % TARGET_COLOR_PALETTE.len();
+            mapping.insert(name.clone(), Rgba(TARGET_COLOR_PALETTE[palette_index]));
+        }
+
+        mapping
+    }
+
     fn load_font() -> FontVec {
         let bytes = include_bytes!("../FiraCode-Regular.ttf");
         FontVec::try_from_vec(bytes.to_vec()).expect("failed to load built-in font")
@@ -343,6 +323,7 @@ impl<'a> Dotplot<'a> {
             log::warn!("No alignments available after filtering; nothing to draw");
             return;
         }
+        let target_colors = self.target_color_map(&target_coords);
         self.draw_target_ticks(&target_coords);
 
         let query_coords = self.queries_to_coords(&mut records);
@@ -352,12 +333,19 @@ impl<'a> Dotplot<'a> {
         }
         self.draw_query_ticks(&query_coords);
 
-        self.draw_alignments(&records, &target_coords, &query_coords, &analysis);
+        self.draw_alignments(
+            &records,
+            &target_coords,
+            &query_coords,
+            &analysis,
+            &target_colors,
+        );
 
         self.draw_target_names(&target_coords);
         self.draw_query_names(&query_coords);
 
-        self.bubble_plot = self.build_bubble_grid(&analysis, &target_coords, &query_coords);
+        self.bubble_plot =
+            self.build_bubble_grid(&analysis, &target_coords, &query_coords, &target_colors);
     }
 
     fn draw_alignments(
@@ -366,10 +354,11 @@ impl<'a> Dotplot<'a> {
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
         analysis: &SyntenyAnalysis,
+        target_colors: &HashMap<String, Rgba<u8>>,
     ) {
         for (_, records) in records_vec.iter() {
             for record in records.iter() {
-                self.draw_alignment(record, target_coords, query_coords, analysis);
+                self.draw_alignment(record, target_coords, query_coords, analysis, target_colors);
             }
         }
     }
@@ -380,6 +369,7 @@ impl<'a> Dotplot<'a> {
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
         analysis: &SyntenyAnalysis,
+        target_colors: &HashMap<String, Rgba<u8>>,
     ) {
         let Some(tcoords) = target_coords.get(&record.tname) else {
             log::warn!(
@@ -400,7 +390,11 @@ impl<'a> Dotplot<'a> {
         };
         let (qstart_px, qend_px) = Self::query_pixel_range(record, qcoords);
 
-        let color = analysis.color_for(&record.tname, &record.qname);
+        let chromosome_color = target_colors
+            .get(&record.tname)
+            .copied()
+            .unwrap_or(self.foreground_color);
+        let color = analysis.color_for(&record.tname, &record.qname, chromosome_color);
 
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
@@ -795,6 +789,7 @@ impl<'a> Dotplot<'a> {
         analysis: &SyntenyAnalysis,
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
+        target_colors: &HashMap<String, Rgba<u8>>,
     ) -> Option<RgbaImage> {
         if analysis.total_anchors == 0
             || analysis.num_tests == 0
@@ -825,7 +820,8 @@ impl<'a> Dotplot<'a> {
         }
         let left_margin = cell_size * 2.4;
         let top_margin = cell_size * 2.0;
-        let legend_height = (SIGNIFICANCE_BINS.len() as f32 + 1.5) * (cell_size * 0.6);
+        let legend_entries = target_order.len() + 1; // include non-significant entry
+        let legend_height = (legend_entries as f32 + 1.5) * (cell_size * 0.6);
 
         let grid_width = (target_order.len() as f32) * cell_size;
         let grid_height = (query_order.len() as f32) * cell_size;
@@ -895,7 +891,11 @@ impl<'a> Dotplot<'a> {
                 if summary.is_significant() && summary.anchors > 0 {
                     let radius_ratio = (summary.anchors as f32 / max_anchor as f32).sqrt();
                     let radius = (radius_ratio * max_radius).max(3.0);
-                    let color = summary.color();
+                    let chromosome_color = target_colors
+                        .get(target)
+                        .copied()
+                        .unwrap_or(self.foreground_color);
+                    let color = analysis.color_for(target, query, chromosome_color);
                     draw_filled_circle_mut(
                         &mut bubble_plot,
                         (center_x.round() as i32, center_y.round() as i32),
@@ -974,13 +974,17 @@ impl<'a> Dotplot<'a> {
             (legend_y - cell_size * 0.4) as i32,
             legend_scale,
             &self.font,
-            "Fisher P (corrected)",
+            "Chromosome colors (x-axis order)",
         );
 
-        for bin in SIGNIFICANCE_BINS.iter() {
+        for target in target_order.iter() {
             let rect = Rect::at(legend_x.round() as i32, legend_y.round() as i32)
                 .of_size(swatch_size.round() as u32, swatch_size.round() as u32);
-            draw_filled_rect_mut(&mut bubble_plot, rect, Rgba(bin.color));
+            let color = target_colors
+                .get(target)
+                .copied()
+                .unwrap_or(self.foreground_color);
+            draw_filled_rect_mut(&mut bubble_plot, rect, color);
 
             let text_x = legend_x + swatch_size + cell_size * 0.2;
             draw_text_mut(
@@ -990,7 +994,7 @@ impl<'a> Dotplot<'a> {
                 legend_y.round() as i32,
                 legend_scale,
                 &self.font,
-                bin.label,
+                target,
             );
 
             legend_y += swatch_size + cell_size * 0.2;
@@ -1007,7 +1011,7 @@ impl<'a> Dotplot<'a> {
             legend_y.round() as i32,
             legend_scale,
             &self.font,
-            "n.s.",
+            "non-significant",
         );
 
         Some(bubble_plot)
