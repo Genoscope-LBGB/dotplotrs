@@ -49,13 +49,13 @@ impl<'a> BubblePlotBuilder<'a> {
         if cell_size.is_nan() || cell_size <= 0.0 {
             cell_size = 60.0;
         }
-        let left_margin = cell_size * 2.4;
-        let top_margin = cell_size * 2.0;
+        let left_margin = cell_size * 1.8;
+        let top_margin = cell_size * 1.25;
         let grid_width = (target_order.len() as f32) * cell_size;
         let grid_height = (query_order.len() as f32) * cell_size;
 
-        let image_width = (left_margin + grid_width + cell_size * 2.0).ceil() as u32;
-        let image_height = (top_margin + grid_height + cell_size).ceil() as u32;
+        let image_width = (left_margin + grid_width + cell_size * 0.8).ceil() as u32;
+        let image_height = (top_margin + grid_height + cell_size * 0.85).ceil() as u32;
 
         let mut bubble_plot =
             RgbaImage::from_pixel(image_width, image_height, self.background_color);
