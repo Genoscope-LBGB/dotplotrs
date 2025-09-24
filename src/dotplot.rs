@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const SIGNIFICANCE_THRESHOLD: f64 = 0.01;
+const SHORT_ALIGNMENT_PIXEL_LENGTH: f32 = 3.0;
 
 const TARGET_COLOR_PALETTE: &[[u8; 4]] = &[
     [68, 119, 170, 255],  // Tol Bright blue
@@ -409,6 +410,13 @@ impl<'a> Dotplot<'a> {
 
         let line_length = line_length_sq.sqrt();
 
+        if line_length <= SHORT_ALIGNMENT_PIXEL_LENGTH {
+            let midpoint_x = (tstart_px + tend_px) * 0.5;
+            let midpoint_y = (qstart_px + qend_px) * 0.5;
+            self.draw_alignment_point(midpoint_x, midpoint_y, thickness.max(1), color);
+            return;
+        }
+
         // Normalize the direction vector
         let nx = dx / line_length;
         let ny = dy / line_length;
@@ -457,23 +465,11 @@ impl<'a> Dotplot<'a> {
     }
 
     fn draw_alignment_point(&mut self, x: f32, y: f32, thickness: u32, color: Rgba<u8>) {
-        let radius = ((thickness as f32 / 2.0).ceil() as i32).max(0);
+        let radius = ((thickness as f32 / 2.0).ceil() as i32).max(1);
         let center_x = x.round() as i32;
         let center_y = y.round() as i32;
 
-        let width = self.plot.width() as i32;
-        let height = self.plot.height() as i32;
-
-        for dx in -radius..=radius {
-            for dy in -radius..=radius {
-                let px = center_x + dx;
-                let py = center_y + dy;
-                if px >= 0 && px < width && py >= 0 && py < height {
-                    let (px_u32, py_u32) = (px as u32, py as u32);
-                    self.plot.put_pixel(px_u32, py_u32, color);
-                }
-            }
-        }
+        draw_filled_circle_mut(&mut self.plot, (center_x, center_y), radius, color);
     }
 
     // Gets the position of each target on the x-axis, sorted by size
