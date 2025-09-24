@@ -82,12 +82,10 @@ pub fn parse_paf(
 
         let aln_size = record.tend.abs_diff(record.tstart);
         if aln_size >= min_aln_size {
-            match records_hash.get_mut(&record.tname) {
-                Some(records) => records.push(record),
-                None => {
-                    records_hash.insert(record.tname.clone(), vec![record]);
-                }
-            }
+            records_hash
+                .entry(record.tname.clone())
+                .or_default()
+                .push(record);
         }
     }
 
@@ -162,11 +160,11 @@ impl Error for PafError {
 }
 
 pub fn sort_records_hash(records_hash: &mut HashMap<String, Vec<PafRecord>>) {
-    for (_, records) in records_hash.iter_mut() {
+    for records in records_hash.values_mut() {
         sort_records_by_tstart(records);
     }
 }
 
 pub fn sort_records_by_tstart(records: &mut [PafRecord]) {
-    records.sort_by(|a, b| a.tstart.partial_cmp(&b.tstart).unwrap());
+    records.sort_by_key(|record| record.tstart);
 }
