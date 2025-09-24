@@ -56,7 +56,6 @@ fn non_significant_color() -> Rgba<u8> {
 #[derive(Debug, Clone)]
 struct PairSummary {
     anchors: u64,
-    raw_p_value: f64,
     corrected_p_value: f64,
 }
 
@@ -81,8 +80,6 @@ impl PairSummary {
 #[derive(Debug, Clone)]
 struct SyntenyAnalysis {
     pair_summaries: HashMap<String, HashMap<String, PairSummary>>,
-    target_totals: HashMap<String, u64>,
-    query_totals: HashMap<String, u64>,
     total_anchors: u64,
     num_tests: usize,
 }
@@ -114,8 +111,6 @@ impl SyntenyAnalysis {
         if total_anchors == 0 || num_tests == 0 {
             return Self {
                 pair_summaries: HashMap::new(),
-                target_totals,
-                query_totals,
                 total_anchors,
                 num_tests,
             };
@@ -148,7 +143,6 @@ impl SyntenyAnalysis {
                     query.clone(),
                     PairSummary {
                         anchors,
-                        raw_p_value,
                         corrected_p_value: corrected,
                     },
                 );
@@ -157,8 +151,6 @@ impl SyntenyAnalysis {
 
         Self {
             pair_summaries,
-            target_totals,
-            query_totals,
             total_anchors,
             num_tests,
         }
@@ -936,7 +928,7 @@ impl<'a> Dotplot<'a> {
         for (col_idx, target) in target_order.iter().enumerate() {
             let center_x = grid_left + (col_idx as f32 + 0.5) * cell_size;
             let text = target.as_str();
-            let (text_w, text_h) = text_size(label_scale, &self.font, text);
+            let (text_w, _text_h) = text_size(label_scale, &self.font, text);
             let draw_x = (center_x - text_w as f32 / 2.0).round() as i32;
             let draw_y = (grid_bottom + cell_size * 0.2) as i32;
             draw_text_mut(
@@ -1021,21 +1013,18 @@ impl<'a> Dotplot<'a> {
         Some(bubble_plot)
     }
 
-    fn sorted_coordinates<'a, T, F>(
-        coords: &'a HashMap<String, T>,
-        key_fn: F,
-    ) -> Vec<(&'a String, &'a T)>
+    fn sorted_coordinates<T, F>(coords: &HashMap<String, T>, mut key_fn: F) -> Vec<(&String, &T)>
     where
-        F: Fn(&T) -> f32,
+        F: FnMut(&T) -> f32,
     {
         let mut entries: Vec<_> = coords.iter().collect();
-        entries.sort_by(|a, b| {
-            let left = key_fn(a.1);
-            let right = key_fn(b.1);
+        entries.sort_by(|(name_a, coord_a), (name_b, coord_b)| {
+            let left = key_fn(coord_a);
+            let right = key_fn(coord_b);
             match left.partial_cmp(&right) {
-                Some(Ordering::Equal) => a.0.cmp(b.0),
+                Some(Ordering::Equal) => name_a.cmp(name_b),
                 Some(order) => order,
-                None => a.0.cmp(b.0),
+                None => name_a.cmp(name_b),
             }
         });
         entries
