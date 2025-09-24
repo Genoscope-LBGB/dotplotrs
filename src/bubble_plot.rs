@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use ab_glyph::{FontVec, PxScale};
 use image::{Rgba, RgbaImage};
 use imageproc::drawing::{
-    draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_rect_mut, draw_line_segment_mut,
-    draw_text_mut, text_size,
+    draw_filled_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size,
 };
 use imageproc::rect::Rect;
 
@@ -52,14 +51,11 @@ impl<'a> BubblePlotBuilder<'a> {
         }
         let left_margin = cell_size * 2.4;
         let top_margin = cell_size * 2.0;
-        let legend_entries = target_order.len() + 1; // include non-significant entry
-        let legend_height = (legend_entries as f32 + 1.5) * (cell_size * 0.6);
-
         let grid_width = (target_order.len() as f32) * cell_size;
         let grid_height = (query_order.len() as f32) * cell_size;
 
         let image_width = (left_margin + grid_width + cell_size * 2.0).ceil() as u32;
-        let image_height = (top_margin + grid_height + legend_height + cell_size).ceil() as u32;
+        let image_height = (top_margin + grid_height + cell_size).ceil() as u32;
 
         let mut bubble_plot =
             RgbaImage::from_pixel(image_width, image_height, self.background_color);
@@ -185,61 +181,6 @@ impl<'a> BubblePlotBuilder<'a> {
                 text,
             );
         }
-
-        let legend_x = grid_left;
-        let mut legend_y = grid_bottom + cell_size * 0.7;
-        let swatch_size = (cell_size * 0.4).clamp(12.0, 24.0);
-        let legend_scale = PxScale {
-            x: (cell_size * 0.32).clamp(11.0, 24.0),
-            y: (cell_size * 0.32).clamp(11.0, 24.0),
-        };
-
-        draw_text_mut(
-            &mut bubble_plot,
-            self.foreground_color,
-            legend_x.round() as i32,
-            (legend_y - cell_size * 0.4) as i32,
-            legend_scale,
-            self.font,
-            "Chromosome colors (x-axis order)",
-        );
-
-        for target in target_order.iter() {
-            let rect = Rect::at(legend_x.round() as i32, legend_y.round() as i32)
-                .of_size(swatch_size.round() as u32, swatch_size.round() as u32);
-            let color = target_colors
-                .get(target)
-                .copied()
-                .unwrap_or(self.foreground_color);
-            draw_filled_rect_mut(&mut bubble_plot, rect, color);
-
-            let text_x = legend_x + swatch_size + cell_size * 0.2;
-            draw_text_mut(
-                &mut bubble_plot,
-                self.foreground_color,
-                text_x.round() as i32,
-                legend_y.round() as i32,
-                legend_scale,
-                self.font,
-                target,
-            );
-
-            legend_y += swatch_size + cell_size * 0.2;
-        }
-
-        let rect = Rect::at(legend_x.round() as i32, legend_y.round() as i32)
-            .of_size(swatch_size.round() as u32, swatch_size.round() as u32);
-        draw_filled_rect_mut(&mut bubble_plot, rect, non_significant);
-        let text_x = legend_x + swatch_size + cell_size * 0.2;
-        draw_text_mut(
-            &mut bubble_plot,
-            self.foreground_color,
-            text_x.round() as i32,
-            legend_y.round() as i32,
-            legend_scale,
-            self.font,
-            "non-significant",
-        );
 
         Some(bubble_plot)
     }
