@@ -67,12 +67,32 @@ pub fn parse_args() -> Config {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("no_color")
+                .long("no-color")
+                .action(clap::ArgAction::SetTrue)
+                .help("Render alignments without group colors (use theme foreground color)"),
+        )
+        .arg(
             Arg::new("linethickness")
                 .long("line-thickness")
                 .required(false)
                 .default_value("1")
                 .value_parser(value_parser!(u32))
                 .help("Thickness of lines (doubled for best matching chromosomes)"),
+        )
+        .arg(
+            Arg::new("bubbleminsize")
+                .long("bubble-min-size")
+                .required(false)
+                .default_value("0")
+                .value_parser(value_parser!(u64))
+                .help("Minimum sequence length (bp) to include in the bubble plot"),
+        )
+        .arg(
+            Arg::new("gravityonlyordering")
+                .long("gravity-ordering-only")
+                .action(clap::ArgAction::SetTrue)
+                .help("Order query sequences using gravity only (ignore statistical significance)"),
         )
         .arg(
             Arg::new("theme")
@@ -100,8 +120,11 @@ pub fn parse_args() -> Config {
         margin_y: args.get_one::<f32>("marginy").unwrap().to_owned(),
         output: args.get_one::<String>("output").unwrap().clone(),
         debug: args.get_flag("debug"),
+        no_color: args.get_flag("no_color"),
         line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
         theme,
+        bubble_min_sequence_size: args.get_one::<u64>("bubbleminsize").unwrap().to_owned(),
+        use_significance_for_ordering: !args.get_flag("gravityonlyordering"),
     }
 }
 

@@ -23,7 +23,10 @@ Options:
       --margin-y <marginy>              Percentage of the image that will stay blank on the y-axis [default: 0.05]
   -o, --output <output>                 Name of the output file [default: dotplot.png]
       --debug
+      --no-color                        Render alignments without group colors (use theme foreground color)
       --line-thickness <linethickness>  Thickness of lines (doubled for best matching chromosomes) [default: 1]
+      --bubble-min-size <bubbleminsize> Minimum sequence length (bp) to include in the bubble plot [default: 0]
+      --theme <theme>                   Color theme for the output image [default: light] [possible values: light, dark]
   -h, --help                            Print help
   -V, --version                         Print version
 ```

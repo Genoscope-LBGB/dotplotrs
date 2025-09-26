@@ -1,15 +1,222 @@
-use crate::{config::Config, parser::PafRecord};
+use crate::{
+    bubble_plot::{bubble_output_path, BubblePlotBuilder},
+    config::{Config, Theme},
+    parser::PafRecord,
+};
 use ab_glyph::{FontVec, PxScale};
 use image::{imageops::overlay, Pixel, Rgba, RgbaImage};
 use imageproc::drawing::{
-    draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_rect_mut,
-    draw_line_segment_mut, draw_text_mut, text_size,
+    draw_antialiased_line_segment_mut, draw_filled_circle_mut, draw_filled_rect_mut,
+    draw_hollow_rect_mut, draw_line_segment_mut, draw_text_mut, text_size,
 };
 use imageproc::geometric_transformations::{rotate, Interpolation};
 use imageproc::rect::Rect;
 use num_traits::NumCast;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+
+const SIGNIFICANCE_THRESHOLD: f64 = 0.01;
+const SHORT_ALIGNMENT_PIXEL_LENGTH: f32 = 3.0;
+
+const TARGET_COLOR_PALETTE: &[[u8; 4]] = &[
+    [68, 119, 170, 255],  // Tol Bright blue
+    [102, 204, 238, 255], // bright cyan
+    [34, 136, 51, 255],   // bright green
+    [204, 187, 68, 255],  // warm yellow
+    [238, 102, 119, 255], // coral red
+    [170, 51, 119, 255],  // magenta
+    [170, 119, 68, 255],  // warm brown
+    [68, 170, 153, 255],  // teal
+];
+
+fn non_significant_color(theme: Theme) -> Rgba<u8> {
+    match theme {
+        Theme::Light => Rgba([190, 190, 190, 255]),
+        Theme::Dark => Rgba([80, 80, 90, 255]),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PairSummary {
+    anchors: u64,
+    corrected_p_value: f64,
+}
+
+impl PairSummary {
+    pub(crate) fn is_significant(&self) -> bool {
+        self.corrected_p_value < SIGNIFICANCE_THRESHOLD
+    }
+
+    pub(crate) fn anchor_count(&self) -> u64 {
+        self.anchors
+    }
+
+    pub(crate) fn corrected_p_value(&self) -> f64 {
+        self.corrected_p_value
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SyntenyAnalysis {
+    pair_summaries: HashMap<String, HashMap<String, PairSummary>>,
+    total_anchors: u64,
+    num_tests: usize,
+}
+
+impl SyntenyAnalysis {
+    fn new(records: &[(String, Vec<PafRecord>)]) -> Self {
+        let mut pair_counts: HashMap<(String, String), u64> = HashMap::new();
+        let mut target_totals: HashMap<String, u64> = HashMap::new();
+        let mut query_totals: HashMap<String, u64> = HashMap::new();
+
+        let mut total_anchors = 0_u64;
+
+        for (target, records) in records {
+            for record in records {
+                *pair_counts
+                    .entry((target.clone(), record.qname.clone()))
+                    .or_insert(0) += 1;
+                *target_totals.entry(target.clone()).or_insert(0) += 1;
+                *query_totals.entry(record.qname.clone()).or_insert(0) += 1;
+                total_anchors += 1;
+            }
+        }
+
+        let target_names: Vec<String> = target_totals.keys().cloned().collect();
+        let query_names: Vec<String> = query_totals.keys().cloned().collect();
+
+        let num_tests = target_names.len().saturating_mul(query_names.len());
+
+        if total_anchors == 0 || num_tests == 0 {
+            return Self {
+                pair_summaries: HashMap::new(),
+                total_anchors,
+                num_tests,
+            };
+        }
+
+        let total_usize: usize = total_anchors
+            .try_into()
+            .expect("Total number of anchors exceeds usize range");
+        let ln_factorials = cumulative_ln_factorials(total_usize);
+
+        let mut pair_summaries: HashMap<String, HashMap<String, PairSummary>> = HashMap::new();
+        for target in &target_names {
+            for query in &query_names {
+                let anchors = *pair_counts
+                    .get(&(target.clone(), query.clone()))
+                    .unwrap_or(&0);
+                let row_total = *target_totals.get(target).unwrap_or(&0);
+                let col_total = *query_totals.get(query).unwrap_or(&0);
+
+                let raw_p_value = fisher_exact_greater(
+                    anchors,
+                    row_total,
+                    col_total,
+                    total_anchors,
+                    &ln_factorials,
+                );
+
+                let corrected = (raw_p_value * num_tests as f64).min(1.0);
+                pair_summaries.entry(target.clone()).or_default().insert(
+                    query.clone(),
+                    PairSummary {
+                        anchors,
+                        corrected_p_value: corrected,
+                    },
+                );
+            }
+        }
+
+        Self {
+            pair_summaries,
+            total_anchors,
+            num_tests,
+        }
+    }
+
+    pub(crate) fn has_data(&self) -> bool {
+        self.total_anchors > 0 && self.num_tests > 0
+    }
+
+    pub(crate) fn max_significant_anchor_count(&self) -> u64 {
+        self.pair_summaries
+            .values()
+            .flat_map(|inner| inner.values())
+            .filter(|summary| summary.is_significant())
+            .map(|summary| summary.anchor_count())
+            .max()
+            .unwrap_or(0)
+            .max(1)
+    }
+
+    pub(crate) fn summary_for(&self, target: &str, query: &str) -> Option<&PairSummary> {
+        self.pair_summaries
+            .get(target)
+            .and_then(|inner| inner.get(query))
+    }
+
+    pub(crate) fn color_for(
+        &self,
+        target: &str,
+        query: &str,
+        chromosome_color: Rgba<u8>,
+        non_significant: Rgba<u8>,
+    ) -> Rgba<u8> {
+        match self.summary_for(target, query) {
+            Some(summary) if summary.is_significant() => chromosome_color,
+            _ => non_significant,
+        }
+    }
+}
+
+fn cumulative_ln_factorials(n: usize) -> Vec<f64> {
+    let mut ln_factorials = Vec::with_capacity(n + 1);
+    ln_factorials.push(0.0);
+    for k in 1..=n {
+        let previous = ln_factorials[k - 1];
+        ln_factorials.push(previous + (k as f64).ln());
+    }
+    ln_factorials
+}
+
+fn ln_combination(n: u64, k: u64, ln_factorials: &[f64]) -> f64 {
+    if k > n {
+        return f64::NEG_INFINITY;
+    }
+    let n_usize = n as usize;
+    let k_usize = k as usize;
+    ln_factorials[n_usize] - ln_factorials[k_usize] - ln_factorials[n_usize - k_usize]
+}
+
+fn fisher_exact_greater(
+    a: u64,
+    row_total: u64,
+    col_total: u64,
+    grand_total: u64,
+    ln_factorials: &[f64],
+) -> f64 {
+    if row_total == 0 || col_total == 0 {
+        return 1.0;
+    }
+
+    let max_k = row_total.min(col_total);
+    let min_k = row_total
+        .saturating_add(col_total)
+        .saturating_sub(grand_total);
+    if a > max_k {
+        return 0.0;
+    }
+    let start_k = a.max(min_k);
+    let mut cumulative = 0.0;
+    for k in start_k..=max_k {
+        let log_p = ln_combination(col_total, k, ln_factorials)
+            + ln_combination(grand_total - col_total, row_total - k, ln_factorials)
+            - ln_combination(grand_total, row_total, ln_factorials);
+        cumulative += log_p.exp();
+    }
+    cumulative.clamp(0.0, 1.0)
+}
 
 pub struct TargetCoord {
     pub start: f32,
@@ -54,6 +261,7 @@ pub struct Dotplot<'a> {
     start_y: f32,
     end_y: f32,
     plot: RgbaImage,
+    bubble_plot: Option<RgbaImage>,
     foreground_color: Rgba<u8>,
     background_color: Rgba<u8>,
     font: FontVec,
@@ -86,6 +294,7 @@ impl<'a> Dotplot<'a> {
             start_y,
             end_y,
             plot,
+            bubble_plot: None,
             foreground_color,
             background_color,
             font,
@@ -94,6 +303,26 @@ impl<'a> Dotplot<'a> {
 
         dotplot.init_plot();
         dotplot
+    }
+
+    fn target_color_map(
+        &self,
+        target_coords: &HashMap<String, TargetCoord>,
+    ) -> HashMap<String, Rgba<u8>> {
+        let mut mapping = HashMap::new();
+        let ordered_targets = Self::sorted_coordinates(target_coords, |coord| coord.start);
+
+        for (index, (name, _)) in ordered_targets.into_iter().enumerate() {
+            let color = if self.config.no_color {
+                self.foreground_color
+            } else {
+                let palette_index = index % TARGET_COLOR_PALETTE.len();
+                Rgba(TARGET_COLOR_PALETTE[palette_index])
+            };
+            mapping.insert(name.clone(), color);
+        }
+
+        mapping
     }
 
     fn load_font() -> FontVec {
@@ -129,24 +358,81 @@ impl<'a> Dotplot<'a> {
     }
 
     pub fn draw(&mut self, mut records: Vec<(String, Vec<PafRecord>)>) {
+        let analysis = SyntenyAnalysis::new(&records);
         let target_coords = self.targets_to_coords(&records);
         if target_coords.is_empty() {
             log::warn!("No alignments available after filtering; nothing to draw");
             return;
         }
+        let target_colors = self.target_color_map(&target_coords);
+        let non_significant = non_significant_color(self.config.theme);
         self.draw_target_ticks(&target_coords);
 
-        let query_coords = self.queries_to_coords(&mut records);
+        let query_coords = self.queries_to_coords(
+            &mut records,
+            &analysis,
+            self.config.use_significance_for_ordering,
+        );
         if query_coords.is_empty() {
             log::warn!("No query coordinates available; nothing to draw");
             return;
         }
         self.draw_query_ticks(&query_coords);
 
-        self.draw_alignments(&records, &target_coords, &query_coords);
+        self.draw_alignments(
+            &records,
+            &target_coords,
+            &query_coords,
+            &analysis,
+            &target_colors,
+            non_significant,
+        );
 
         self.draw_target_names(&target_coords);
         self.draw_query_names(&query_coords);
+
+        let target_sizes: HashMap<String, u64> =
+            self.get_target_sizes_in_bp(&records).into_iter().collect();
+        let query_sizes = self.get_query_sizes_in_bp(&records);
+
+        let min_bubble_size = self.config.bubble_min_sequence_size;
+
+        let mut target_order: Vec<String> =
+            Self::sorted_coordinates(&target_coords, |coord| coord.start)
+                .into_iter()
+                .map(|(name, _)| name.clone())
+                .collect();
+        let mut query_order: Vec<String> =
+            Self::sorted_coordinates(&query_coords, |coord| coord.start)
+                .into_iter()
+                .map(|(name, _)| name.clone())
+                .collect();
+
+        if min_bubble_size > 0 {
+            target_order = target_order
+                .into_iter()
+                .filter(|name| target_sizes.get(name).copied().unwrap_or(0) >= min_bubble_size)
+                .collect();
+            query_order = query_order
+                .into_iter()
+                .filter(|name| query_sizes.get(name).copied().unwrap_or(0) >= min_bubble_size)
+                .collect();
+        }
+
+        let bubble_builder = BubblePlotBuilder::new(
+            self.config.width,
+            self.foreground_color,
+            self.background_color,
+            &self.font,
+        );
+
+        self.bubble_plot = bubble_builder.build(
+            &analysis,
+            &target_order,
+            &query_order,
+            &target_colors,
+            non_significant,
+        );
     }
 
     fn draw_alignments(
@@ -154,10 +440,20 @@ impl<'a> Dotplot<'a> {
         records_vec: &[(String, Vec<PafRecord>)],
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
+        analysis: &SyntenyAnalysis,
+        target_colors: &HashMap<String, Rgba<u8>>,
+        non_significant: Rgba<u8>,
     ) {
         for (_, records) in records_vec.iter() {
             for record in records.iter() {
-                self.draw_alignment(record, target_coords, query_coords);
+                self.draw_alignment(
+                    record,
+                    target_coords,
+                    query_coords,
+                    analysis,
+                    target_colors,
+                    non_significant,
+                );
             }
         }
     }
@@ -167,6 +463,9 @@ impl<'a> Dotplot<'a> {
         record: &PafRecord,
         target_coords: &HashMap<String, TargetCoord>,
         query_coords: &HashMap<String, QueryCoord>,
+        analysis: &SyntenyAnalysis,
+        target_colors: &HashMap<String, Rgba<u8>>,
+        non_significant: Rgba<u8>,
     ) {
         let Some(tcoords) = target_coords.get(&record.tname) else {
             log::warn!(
@@ -187,6 +486,17 @@ impl<'a> Dotplot<'a> {
         };
         let (qstart_px, qend_px) = Self::query_pixel_range(record, qcoords);
 
+        let chromosome_color = target_colors
+            .get(&record.tname)
+            .copied()
+            .unwrap_or(self.foreground_color);
+        let color = analysis.color_for(
+            &record.tname,
+            &record.qname,
+            chromosome_color,
+            non_significant,
+        );
+
         // Calculate the line direction vector
         let dx = tend_px - tstart_px;
         let dy = qend_px - qstart_px;
@@ -194,11 +504,18 @@ impl<'a> Dotplot<'a> {
 
         let thickness = self.config.line_thickness;
         if line_length_sq <= f32::EPSILON {
-            self.draw_alignment_point(tstart_px, qstart_px, thickness.max(1));
+            self.draw_alignment_point(tstart_px, qstart_px, thickness.max(1), color);
             return;
         }
 
         let line_length = line_length_sq.sqrt();
+
+        if line_length <= SHORT_ALIGNMENT_PIXEL_LENGTH {
+            let midpoint_x = (tstart_px + tend_px) * 0.5;
+            let midpoint_y = (qstart_px + qend_px) * 0.5;
+            self.draw_alignment_point(midpoint_x, midpoint_y, thickness.max(1), color);
+            return;
+        }
 
         // Normalize the direction vector
         let nx = dx / line_length;
@@ -221,7 +538,7 @@ impl<'a> Dotplot<'a> {
                 &mut self.plot,
                 ((tstart_px + offset_x) as i32, (qstart_px + offset_y) as i32),
                 ((tend_px + offset_x) as i32, (qend_px + offset_y) as i32),
-                self.foreground_color,
+                color,
                 Self::interpolate,
             );
         }
@@ -247,24 +564,12 @@ impl<'a> Dotplot<'a> {
         imageproc::pixelops::interpolate(left, right, left_weight)
     }
 
-    fn draw_alignment_point(&mut self, x: f32, y: f32, thickness: u32) {
-        let radius = ((thickness as f32 / 2.0).ceil() as i32).max(0);
+    fn draw_alignment_point(&mut self, x: f32, y: f32, thickness: u32, color: Rgba<u8>) {
+        let radius = ((thickness as f32 / 2.0).ceil() as i32).max(1);
         let center_x = x.round() as i32;
         let center_y = y.round() as i32;
 
-        let width = self.plot.width() as i32;
-        let height = self.plot.height() as i32;
-
-        for dx in -radius..=radius {
-            for dy in -radius..=radius {
-                let px = center_x + dx;
-                let py = center_y + dy;
-                if px >= 0 && px < width && py >= 0 && py < height {
-                    let (px_u32, py_u32) = (px as u32, py as u32);
-                    self.plot.put_pixel(px_u32, py_u32, self.foreground_color);
-                }
-            }
-        }
+        draw_filled_circle_mut(&mut self.plot, (center_x, center_y), radius, color);
     }
 
     // Gets the position of each target on the x-axis, sorted by size
@@ -298,16 +603,19 @@ impl<'a> Dotplot<'a> {
         coords
     }
 
-    // Gets the porsition of each query on the y-axis, sorted by gravity
+    // Gets the position of each query on the y-axis, preferring significant target matches
     fn queries_to_coords(
         &self,
         records_vec: &mut [(String, Vec<PafRecord>)],
+        analysis: &SyntenyAnalysis,
+        use_significance_for_ordering: bool,
     ) -> HashMap<String, QueryCoord> {
         let targets_sizes = self.get_target_sizes_in_bp(records_vec);
         let query_sizes = self.get_query_sizes_in_bp(records_vec);
         let total_size = query_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
-        let best_matching_chrs = Self::get_best_matching_chrs(records_vec);
+        let best_matching_chrs =
+            Self::get_best_matching_chrs(records_vec, analysis, use_significance_for_ordering);
 
         let axis_size = self.end_y - self.start_y;
         if total_size == 0 {
@@ -325,7 +633,9 @@ impl<'a> Dotplot<'a> {
                 }
 
                 for record in records.iter_mut() {
-                    let best_matching_chr = best_matching_chrs.get(&record.qname).unwrap();
+                    let Some(best_matching_chr) = best_matching_chrs.get(&record.qname) else {
+                        continue;
+                    };
                     if *best_matching_chr != tname {
                         continue;
                     }
@@ -388,24 +698,60 @@ impl<'a> Dotplot<'a> {
     }
 
     // Get the best matching chromosome for each query
-    fn get_best_matching_chrs(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<String, String> {
+    fn get_best_matching_chrs(
+        records_vec: &[(String, Vec<PafRecord>)],
+        analysis: &SyntenyAnalysis,
+        use_significance: bool,
+    ) -> HashMap<String, String> {
         log::debug!("Finding best matching chromosome");
 
         let gravities = Self::compute_gravity(records_vec);
-        let mut best_gravity = HashMap::new();
-        let mut best_matching_chr = HashMap::new();
 
-        for ((target, query), gravity) in gravities.iter() {
-            let g = best_gravity.entry(query).or_insert(gravity);
+        let mut best_matching_chr: HashMap<String, String> = HashMap::new();
+        let mut best_gravity: HashMap<String, u64> = HashMap::new();
+        let mut best_significant: HashMap<String, (String, f64, u64)> = HashMap::new();
 
-            if gravity >= *g {
-                best_gravity.entry(query).and_modify(|grav| *grav = gravity);
+        if !use_significance {
+            for ((target, query), gravity) in &gravities {
+                let stored_gravity = best_gravity.entry(query.clone()).or_insert(*gravity);
+                if *gravity >= *stored_gravity {
+                    *stored_gravity = *gravity;
+                    best_matching_chr.insert(query.clone(), target.clone());
+                }
+            }
+            return best_matching_chr;
+        }
 
+        for ((target, query), gravity) in &gravities {
+            if let Some(summary) = analysis.summary_for(target, query) {
+                if summary.is_significant() {
+                    let p_value = summary.corrected_p_value();
+                    let entry = best_significant
+                        .entry(query.clone())
+                        .or_insert_with(|| (target.clone(), p_value, *gravity));
+                    if p_value < entry.1
+                        || (p_value == entry.1 && *gravity > entry.2)
+                        || (p_value == entry.1
+                            && *gravity == entry.2
+                            && target.as_str() < entry.0.as_str())
+                    {
+                        *entry = (target.clone(), p_value, *gravity);
+                    }
+                }
+            }
+
+            let g = best_gravity.entry(query.clone()).or_insert(*gravity);
+            if *gravity >= *g {
+                *g = *gravity;
                 best_matching_chr
                     .entry(query.clone())
                     .and_modify(|t| *t = target.clone())
                     .or_insert(target.clone());
             }
+        }
+
+        for (query, (target, _, _)) in best_significant {
+            best_matching_chr.insert(query, target);
         }
 
         best_matching_chr
@@ -575,21 +921,18 @@ impl<'a> Dotplot<'a> {
         overlay(&mut self.plot, &query_label_overlay, 0, 0);
     }
 
-    fn sorted_coordinates<'a, T, F>(
-        coords: &'a HashMap<String, T>,
-        key_fn: F,
-    ) -> Vec<(&'a String, &'a T)>
+    fn sorted_coordinates<T, F>(coords: &HashMap<String, T>, mut key_fn: F) -> Vec<(&String, &T)>
     where
-        F: Fn(&T) -> f32,
+        F: FnMut(&T) -> f32,
     {
         let mut entries: Vec<_> = coords.iter().collect();
-        entries.sort_by(|a, b| {
-            let left = key_fn(a.1);
-            let right = key_fn(b.1);
+        entries.sort_by(|(name_a, coord_a), (name_b, coord_b)| {
+            let left = key_fn(coord_a);
+            let right = key_fn(coord_b);
             match left.partial_cmp(&right) {
-                Some(Ordering::Equal) => a.0.cmp(b.0),
+                Some(Ordering::Equal) => name_a.cmp(name_b),
                 Some(order) => order,
-                None => a.0.cmp(b.0),
+                None => name_a.cmp(name_b),
             }
         });
         entries
@@ -617,6 +960,36 @@ impl<'a> Dotplot<'a> {
     // Saves the plot to a file
     pub fn save(&self) {
         self.plot.save(&self.config.output).unwrap();
+
+        if let Some(bubble_plot) = &self.bubble_plot {
+            let bubble_path = bubble_output_path(&self.config.output);
+            bubble_plot.save(&bubble_path).unwrap();
+            log::info!("Saved bubble grid to {}", bubble_path.to_string_lossy());
+        }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fisher_exact_handles_empty_rows_and_columns() {
+        let ln_factorials = cumulative_ln_factorials(0);
+        let p = fisher_exact_greater(0, 0, 5, 5, &ln_factorials);
+        assert_eq!(p, 1.0);
+
+        let ln_factorials = cumulative_ln_factorials(5);
+        let p = fisher_exact_greater(0, 5, 0, 5, &ln_factorials);
+        assert_eq!(p, 1.0);
+    }
+
+    #[test]
+    fn fisher_exact_matches_hypergeom_tail_for_extreme_case() {
+        let ln_factorials = cumulative_ln_factorials(20);
+        let p = fisher_exact_greater(10, 10, 10, 20, &ln_factorials);
+        let expected = 1.0 / 184_756.0; // Choose(20,10)
+        let diff = (p - expected).abs();
+        assert!(diff < 1e-12, "diff={diff}, p={p}, expected={expected}");
     }
 }
 
