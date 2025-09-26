@@ -50,6 +50,10 @@ impl PairSummary {
     pub(crate) fn anchor_count(&self) -> u64 {
         self.anchors
     }
+
+    pub(crate) fn corrected_p_value(&self) -> f64 {
+        self.corrected_p_value
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -364,7 +368,7 @@ impl<'a> Dotplot<'a> {
         let non_significant = non_significant_color(self.config.theme);
         self.draw_target_ticks(&target_coords);
 
-        let query_coords = self.queries_to_coords(&mut records);
+        let query_coords = self.queries_to_coords(&mut records, &analysis);
         if query_coords.is_empty() {
             log::warn!("No query coordinates available; nothing to draw");
             return;
@@ -595,16 +599,17 @@ impl<'a> Dotplot<'a> {
         coords
     }
 
-    // Gets the porsition of each query on the y-axis, sorted by gravity
+    // Gets the position of each query on the y-axis, preferring significant target matches
     fn queries_to_coords(
         &self,
         records_vec: &mut [(String, Vec<PafRecord>)],
+        analysis: &SyntenyAnalysis,
     ) -> HashMap<String, QueryCoord> {
         let targets_sizes = self.get_target_sizes_in_bp(records_vec);
         let query_sizes = self.get_query_sizes_in_bp(records_vec);
         let total_size = query_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
-        let best_matching_chrs = Self::get_best_matching_chrs(records_vec);
+        let best_matching_chrs = Self::get_best_matching_chrs(records_vec, analysis);
 
         let axis_size = self.end_y - self.start_y;
         if total_size == 0 {
@@ -685,24 +690,49 @@ impl<'a> Dotplot<'a> {
     }
 
     // Get the best matching chromosome for each query
-    fn get_best_matching_chrs(records_vec: &[(String, Vec<PafRecord>)]) -> HashMap<String, String> {
+    fn get_best_matching_chrs(
+        records_vec: &[(String, Vec<PafRecord>)],
+        analysis: &SyntenyAnalysis,
+    ) -> HashMap<String, String> {
         log::debug!("Finding best matching chromosome");
 
         let gravities = Self::compute_gravity(records_vec);
-        let mut best_gravity = HashMap::new();
-        let mut best_matching_chr = HashMap::new();
-
-        for ((target, query), gravity) in gravities.iter() {
-            let g = best_gravity.entry(query).or_insert(gravity);
-
-            if gravity >= *g {
-                best_gravity.entry(query).and_modify(|grav| *grav = gravity);
-
-                best_matching_chr
-                    .entry(query.clone())
-                    .and_modify(|t| *t = target.clone())
-                    .or_insert(target.clone());
+        let mut best_significant: HashMap<String, (String, f64)> = HashMap::new();
+        for ((target, query), _) in gravities.iter() {
+            if let Some(summary) = analysis.summary_for(target, query) {
+                if summary.is_significant() {
+                    let p_value = summary.corrected_p_value();
+                    let entry = best_significant
+                        .entry(query.clone())
+                        .or_insert_with(|| (target.clone(), p_value));
+                    if p_value < entry.1 || (p_value == entry.1 && target < &entry.0) {
+                        *entry = (target.clone(), p_value);
+                    }
+                }
             }
+        }
+
+        let mut best_matching_chr: HashMap<String, String> = best_significant
+            .into_iter()
+            .map(|(query, (target, _))| (query, target))
+            .collect();
+
+        let mut gravity_candidates: HashMap<String, (String, u64)> = HashMap::new();
+        for ((target, query), gravity) in gravities.iter() {
+            if best_matching_chr.contains_key(query) {
+                continue;
+            }
+
+            let entry = gravity_candidates
+                .entry(query.clone())
+                .or_insert_with(|| (target.clone(), *gravity));
+            if *gravity >= entry.1 {
+                *entry = (target.clone(), *gravity);
+            }
+        }
+
+        for (query, (target, _)) in gravity_candidates {
+            best_matching_chr.entry(query).or_insert(target);
         }
 
         best_matching_chr
