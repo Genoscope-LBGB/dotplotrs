@@ -11,6 +11,7 @@ pub struct Config {
     pub line_thickness: u32,
     pub theme: Theme,
     pub bubble_min_sequence_size: u64,
+    pub use_significance_for_ordering: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -89,6 +89,12 @@ pub fn parse_args() -> Config {
                 .help("Minimum sequence length (bp) to include in the bubble plot"),
         )
         .arg(
+            Arg::new("gravityonlyordering")
+                .long("gravity-ordering-only")
+                .action(clap::ArgAction::SetTrue)
+                .help("Order query sequences using gravity only (ignore statistical significance)"),
+        )
+        .arg(
             Arg::new("theme")
                 .long("theme")
                 .required(false)
@@ -118,6 +124,7 @@ pub fn parse_args() -> Config {
         line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
         theme,
         bubble_min_sequence_size: args.get_one::<u64>("bubbleminsize").unwrap().to_owned(),
+        use_significance_for_ordering: !args.get_flag("gravityonlyordering"),
     }
 }
 

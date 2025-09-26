@@ -368,7 +368,11 @@ impl<'a> Dotplot<'a> {
         let non_significant = non_significant_color(self.config.theme);
         self.draw_target_ticks(&target_coords);
 
-        let query_coords = self.queries_to_coords(&mut records, &analysis);
+        let query_coords = self.queries_to_coords(
+            &mut records,
+            &analysis,
+            self.config.use_significance_for_ordering,
+        );
         if query_coords.is_empty() {
             log::warn!("No query coordinates available; nothing to draw");
             return;
@@ -604,12 +608,14 @@ impl<'a> Dotplot<'a> {
         &self,
         records_vec: &mut [(String, Vec<PafRecord>)],
         analysis: &SyntenyAnalysis,
+        use_significance_for_ordering: bool,
     ) -> HashMap<String, QueryCoord> {
         let targets_sizes = self.get_target_sizes_in_bp(records_vec);
         let query_sizes = self.get_query_sizes_in_bp(records_vec);
         let total_size = query_sizes.iter().fold(0_u64, |acc, x| acc + x.1);
 
-        let best_matching_chrs = Self::get_best_matching_chrs(records_vec, analysis);
+        let best_matching_chrs =
+            Self::get_best_matching_chrs(records_vec, analysis, use_significance_for_ordering);
 
         let axis_size = self.end_y - self.start_y;
         if total_size == 0 {
@@ -627,7 +633,9 @@ impl<'a> Dotplot<'a> {
                 }
 
                 for record in records.iter_mut() {
-                    let best_matching_chr = best_matching_chrs.get(&record.qname).unwrap();
+                    let Some(best_matching_chr) = best_matching_chrs.get(&record.qname) else {
+                        continue;
+                    };
                     if *best_matching_chr != tname {
                         continue;
                     }
@@ -693,6 +701,7 @@ impl<'a> Dotplot<'a> {
     fn get_best_matching_chrs(
         records_vec: &[(String, Vec<PafRecord>)],
         analysis: &SyntenyAnalysis,
+        use_significance: bool,
     ) -> HashMap<String, String> {
         log::debug!("Finding best matching chromosome");
 
@@ -702,7 +711,18 @@ impl<'a> Dotplot<'a> {
         let mut best_gravity: HashMap<String, u64> = HashMap::new();
         let mut best_significant: HashMap<String, (String, f64, u64)> = HashMap::new();
 
-        for ((target, query), gravity) in gravities.iter() {
+        if !use_significance {
+            for ((target, query), gravity) in &gravities {
+                let stored_gravity = best_gravity.entry(query.clone()).or_insert(*gravity);
+                if *gravity >= *stored_gravity {
+                    *stored_gravity = *gravity;
+                    best_matching_chr.insert(query.clone(), target.clone());
+                }
+            }
+            return best_matching_chr;
+        }
+
+        for ((target, query), gravity) in &gravities {
             if let Some(summary) = analysis.summary_for(target, query) {
                 if summary.is_significant() {
                     let p_value = summary.corrected_p_value();
