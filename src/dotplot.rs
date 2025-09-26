@@ -697,42 +697,41 @@ impl<'a> Dotplot<'a> {
         log::debug!("Finding best matching chromosome");
 
         let gravities = Self::compute_gravity(records_vec);
-        let mut best_significant: HashMap<String, (String, f64)> = HashMap::new();
-        for ((target, query), _) in gravities.iter() {
+
+        let mut best_matching_chr: HashMap<String, String> = HashMap::new();
+        let mut best_gravity: HashMap<String, u64> = HashMap::new();
+        let mut best_significant: HashMap<String, (String, f64, u64)> = HashMap::new();
+
+        for ((target, query), gravity) in gravities.iter() {
             if let Some(summary) = analysis.summary_for(target, query) {
                 if summary.is_significant() {
                     let p_value = summary.corrected_p_value();
                     let entry = best_significant
                         .entry(query.clone())
-                        .or_insert_with(|| (target.clone(), p_value));
-                    if p_value < entry.1 || (p_value == entry.1 && target < &entry.0) {
-                        *entry = (target.clone(), p_value);
+                        .or_insert_with(|| (target.clone(), p_value, *gravity));
+                    if p_value < entry.1
+                        || (p_value == entry.1 && *gravity > entry.2)
+                        || (p_value == entry.1
+                            && *gravity == entry.2
+                            && target.as_str() < entry.0.as_str())
+                    {
+                        *entry = (target.clone(), p_value, *gravity);
                     }
                 }
             }
-        }
 
-        let mut best_matching_chr: HashMap<String, String> = best_significant
-            .into_iter()
-            .map(|(query, (target, _))| (query, target))
-            .collect();
-
-        let mut gravity_candidates: HashMap<String, (String, u64)> = HashMap::new();
-        for ((target, query), gravity) in gravities.iter() {
-            if best_matching_chr.contains_key(query) {
-                continue;
-            }
-
-            let entry = gravity_candidates
-                .entry(query.clone())
-                .or_insert_with(|| (target.clone(), *gravity));
-            if *gravity >= entry.1 {
-                *entry = (target.clone(), *gravity);
+            let g = best_gravity.entry(query.clone()).or_insert(*gravity);
+            if *gravity >= *g {
+                *g = *gravity;
+                best_matching_chr
+                    .entry(query.clone())
+                    .and_modify(|t| *t = target.clone())
+                    .or_insert(target.clone());
             }
         }
 
-        for (query, (target, _)) in gravity_candidates {
-            best_matching_chr.entry(query).or_insert(target);
+        for (query, (target, _, _)) in best_significant {
+            best_matching_chr.insert(query, target);
         }
 
         best_matching_chr
