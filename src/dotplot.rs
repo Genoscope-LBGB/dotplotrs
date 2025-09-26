@@ -309,8 +309,13 @@ impl<'a> Dotplot<'a> {
         let ordered_targets = Self::sorted_coordinates(target_coords, |coord| coord.start);
 
         for (index, (name, _)) in ordered_targets.into_iter().enumerate() {
-            let palette_index = index % TARGET_COLOR_PALETTE.len();
-            mapping.insert(name.clone(), Rgba(TARGET_COLOR_PALETTE[palette_index]));
+            let color = if self.config.no_color {
+                self.foreground_color
+            } else {
+                let palette_index = index % TARGET_COLOR_PALETTE.len();
+                Rgba(TARGET_COLOR_PALETTE[palette_index])
+            };
+            mapping.insert(name.clone(), color);
         }
 
         mapping

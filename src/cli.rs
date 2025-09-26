@@ -67,6 +67,12 @@ pub fn parse_args() -> Config {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("no_color")
+                .long("no-color")
+                .action(clap::ArgAction::SetTrue)
+                .help("Render alignments without group colors (use theme foreground color)"),
+        )
+        .arg(
             Arg::new("linethickness")
                 .long("line-thickness")
                 .required(false)
@@ -108,6 +114,7 @@ pub fn parse_args() -> Config {
         margin_y: args.get_one::<f32>("marginy").unwrap().to_owned(),
         output: args.get_one::<String>("output").unwrap().clone(),
         debug: args.get_flag("debug"),
+        no_color: args.get_flag("no_color"),
         line_thickness: args.get_one::<u32>("linethickness").unwrap().to_owned(),
         theme,
         bubble_min_sequence_size: args.get_one::<u64>("bubbleminsize").unwrap().to_owned(),

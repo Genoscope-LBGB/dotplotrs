@@ -7,6 +7,7 @@ pub struct Config {
     pub margin_y: f32,
     pub output: String,
     pub debug: bool,
+    pub no_color: bool,
     pub line_thickness: u32,
     pub theme: Theme,
     pub bubble_min_sequence_size: u64,
