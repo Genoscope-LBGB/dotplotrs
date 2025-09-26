@@ -94,10 +94,6 @@ impl<'a> BubblePlotBuilder<'a> {
 
         let max_anchor = analysis.max_significant_anchor_count();
         let max_radius = (cell_size * 0.45).max(5.0);
-        let bubble_text_scale = PxScale {
-            x: (cell_size * 0.35).clamp(12.0, 28.0),
-            y: (cell_size * 0.35).clamp(12.0, 28.0),
-        };
 
         for (col_idx, target) in target_order.iter().enumerate() {
             for (row_idx, query) in query_order.iter().enumerate() {
@@ -124,20 +120,6 @@ impl<'a> BubblePlotBuilder<'a> {
                         (center_x.round() as i32, center_y.round() as i32),
                         radius.round() as i32,
                         color,
-                    );
-                } else {
-                    let text = "n.s.";
-                    let (text_w, text_h) = text_size(bubble_text_scale, self.font, text);
-                    let draw_x = (center_x - text_w as f32 / 2.0).round() as i32;
-                    let draw_y = (center_y - text_h as f32 / 2.0).round() as i32;
-                    draw_text_mut(
-                        &mut bubble_plot,
-                        self.foreground_color,
-                        draw_x,
-                        draw_y,
-                        bubble_text_scale,
-                        self.font,
-                        text,
                     );
                 }
             }
